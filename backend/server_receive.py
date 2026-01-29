@@ -1,68 +1,150 @@
 import os
 import logging
-from flask import Flask, request, abort, make_response
+import json
+import base64
+import asyncio
+from typing import List, Optional
+from datetime import datetime
+from pathlib import Path
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request, Response, BackgroundTasks, Query
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from dotenv import load_dotenv
+from openai import OpenAI
+
+# --- WeChat Imports ---
 from wechatpy.enterprise.crypto import WeChatCrypto
 from wechatpy.enterprise import parse_message, create_reply, WeChatClient
-from wechatpy.enterprise.events import SubscribeEvent, UnsubscribeEvent, ClickEvent, ViewEvent, LocationEvent, BatchJobResultEvent
-from wechatpy.enterprise.messages import TextMessage, ImageMessage, VoiceMessage, VideoMessage, LocationMessage, LinkMessage
-from dotenv import load_dotenv
-from pathlib import Path
-import base64
-import requests
-import threading
-from backend.ai_handler import analyze_chat_screenshot_with_glm4v, process_ai_result_and_push
-
-# --- 异常处理兼容性修正 ---
+from wechatpy.enterprise.messages import TextMessage, ImageMessage
+# 异常处理兼容性修正
 try:
     from wechatpy.exceptions import InvalidSignatureException, InvalidCorpIdException
 except ImportError:
-    # wechatpy 1.8.18 可能使用 InvalidAppIdException 代替 InvalidCorpIdException
     from wechatpy.exceptions import InvalidSignatureException, InvalidAppIdException as InvalidCorpIdException
 
+# --- Internal Imports ---
+from backend.ai_handler import analyze_chat_screenshot_with_glm4v, parse_ai_result_to_todos
 
-# --- 配置日志 ---
+# --- Logging Setup ---
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("UnifiedServer")
 
-# --- 加载配置 ---
+# --- Environment Setup ---
+# Try loading from backend/.env
 env_path = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
-TOKEN = os.getenv("WECOM_TOKEN")
-EncodingAESKey = os.getenv("WECOM_AES_KEY")
-CORP_ID = os.getenv("WECOM_CORP_ID")
-# 尝试获取 Secret，如果没有则只能接收消息无法下载媒体
-SECRET = os.getenv("WECOM_SECRET") 
+# Try loading from root .env.local
+root_env_path = Path(__file__).parent.parent / ".env.local"
+load_dotenv(dotenv_path=root_env_path)
 
-if not all([TOKEN, EncodingAESKey, CORP_ID]):
+# --- Zhipu AI Config ---
+API_KEY = os.getenv("ZHIPUAI_API_KEY") or os.getenv("Zhipuai_API_KEY")
+if not API_KEY:
+    logger.warning("ZHIPUAI_API_KEY not found in .env or .env.local file")
+
+client = OpenAI(
+    api_key=API_KEY,
+    base_url="https://open.bigmodel.cn/api/paas/v4/"
+)
+
+# --- WeChat Config ---
+WECOM_TOKEN = os.getenv("WECOM_TOKEN")
+WECOM_AES_KEY = os.getenv("WECOM_AES_KEY")
+WECOM_CORP_ID = os.getenv("WECOM_CORP_ID")
+WECOM_SECRET = os.getenv("WECOM_SECRET")
+
+if not all([WECOM_TOKEN, WECOM_AES_KEY, WECOM_CORP_ID]):
     logger.error("❌ 缺少必要的企业微信配置 (WECOM_TOKEN, WECOM_AES_KEY, WECOM_CORP_ID)，请检查 .env 文件")
-    exit(1)
+    # 不退出，允许服务器启动以服务前端，但微信功能将不可用
 
-# 初始化加解密组件
-try:
-    crypto = WeChatCrypto(TOKEN, EncodingAESKey, CORP_ID)
-except Exception as e:
-    logger.error(f"❌ 初始化 WeChatCrypto 失败: {e}")
-    exit(1)
-
-# 初始化 WeChatClient (用于获取媒体文件等主动操作)
+# Initialize WeChat Components
+crypto = None
 wechat_client = None
-if SECRET:
+
+if all([WECOM_TOKEN, WECOM_AES_KEY, WECOM_CORP_ID]):
     try:
-        wechat_client = WeChatClient(CORP_ID, SECRET)
+        crypto = WeChatCrypto(WECOM_TOKEN, WECOM_AES_KEY, WECOM_CORP_ID)
+        logger.info("✅ WeChatCrypto 初始化成功")
+    except Exception as e:
+        logger.error(f"❌ 初始化 WeChatCrypto 失败: {e}")
+
+if WECOM_SECRET and WECOM_CORP_ID:
+    try:
+        wechat_client = WeChatClient(WECOM_CORP_ID, WECOM_SECRET)
+        logger.info("✅ WeChatClient 初始化成功")
     except Exception as e:
         logger.warning(f"⚠️ 初始化 WeChatClient 失败: {e}，将无法下载图片")
 else:
     logger.warning("⚠️ 未配置 WECOM_SECRET，将无法下载图片进行 AI 分析")
 
-app = Flask(__name__)
 
-def process_image_async(media_id):
+# --- FastAPI App ---
+app = FastAPI(title="Water Essence Sprite Backend")
+
+# Enable CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins for development
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- Data Models ---
+class MindMapNode(BaseModel):
+    label: str
+    subNodes: Optional[List[str]] = []
+
+class ConclusionCard(BaseModel):
+    label: str
+    value: str
+    trend: str
+    isGood: bool
+
+class VisualData(BaseModel):
+    type: str = "analysis"
+    title: str
+    conclusionCards: List[ConclusionCard]
+    mindMap: List[MindMapNode]
+    detailedReport: Optional[str] = None
+
+class ChatResponse(BaseModel):
+    category: str
+    summary: str
+    visualTitle: str
+    conclusionCards: List[ConclusionCard]
+    mindMap: List[MindMapNode]
+    detailedReport: str
+
+class ChatRequest(BaseModel):
+    message: str
+
+class TodoItem(BaseModel):
+    id: str
+    type: str = "meeting"
+    priority: str = "high"
+    title: str
+    sender: str = "会议纪要"
+    time: str
+    completed: bool = False
+    status: str = "pending"
+    aiSummary: Optional[str] = None
+    aiAction: Optional[str] = None
+    content: Optional[str] = None
+    isUserTask: bool = False
+
+# --- Global Storage ---
+todos_store: List[TodoItem] = []
+
+# --- Helper Functions ---
+def process_image_sync(media_id: str):
     """
-    异步处理图片：下载 -> AI分析 -> 推送待办
+    Synchronous function to process image, to be run in background task.
     """
     if not wechat_client:
         logger.error("❌ 无法处理图片：未初始化 WeChatClient (缺少 WECOM_SECRET)")
@@ -70,169 +152,127 @@ def process_image_async(media_id):
 
     logger.info(f"🔄 开始后台处理图片 MediaId: {media_id}")
     try:
-        # 1. 从企业微信下载图片
+        # 1. Download image
         response = wechat_client.media.download(media_id)
         image_content = response.content
         
-        # 2. 转为 Base64
+        # 2. Convert to Base64
         base64_data = base64.b64encode(image_content).decode('utf-8')
         logger.info("✅ 图片下载并转码成功")
 
-        # 3. 调用 AI 分析
+        # 3. Call AI Analysis
+        # Note: calling synchronous OpenAI/Zhipu client here is fine as this is running in background thread
         json_result = analyze_chat_screenshot_with_glm4v(base64_data)
         
-        # 4. 推送结果
+        # 4. Parse and Store Results
         if json_result:
-            process_ai_result_and_push(json_result)
-            logger.info("✅ 图片分析及推送流程完成")
+            new_todos = parse_ai_result_to_todos(json_result)
+            if new_todos:
+                for todo_data in new_todos:
+                    # Convert dict to TodoItem model
+                    try:
+                        todo_item = TodoItem(**todo_data)
+                        todos_store.insert(0, todo_item) # Add to top
+                        logger.info(f"✅ 新增待办事项: {todo_item.title}")
+                    except Exception as e:
+                        logger.error(f"❌ 数据模型转换失败: {e}")
+                logger.info(f"✅ 图片分析完成，已添加 {len(new_todos)} 条待办")
+            else:
+                logger.warning("⚠️ AI 分析结果解析为空")
         else:
             logger.warning("⚠️ AI 分析未返回有效 JSON")
 
     except Exception as e:
         logger.error(f"❌ 图片处理流程异常: {e}")
 
-# --- 消息处理器 ---
-def handle_message(msg):
-    """根据消息类型分发处理逻辑"""
-    msg_type = msg.type
-    
-    # 1. 普通消息处理
-    if msg_type == 'text':
-        logger.info(f"收到文本消息: {msg.content}")
-        # 示例：回复收到的内容
-        return create_reply(f"收到您的消息：{msg.content}", msg)
-    
-    elif msg_type == 'image':
-        logger.info(f"收到图片消息，MediaId: {msg.media_id}")
-        
-        # 开启线程异步处理图片，避免阻塞微信回调（需在5秒内响应）
-        threading.Thread(target=process_image_async, args=(msg.media_id,)).start()
-        
-        return create_reply("正在为您分析图片中的待办事项，请稍候...", msg)
-        
-    elif msg_type == 'voice':
-        logger.info(f"收到语音消息，MediaId: {msg.media_id}")
-        return create_reply("已收到语音", msg)
-        
-    elif msg_type == 'video':
-        logger.info(f"收到视频消息，MediaId: {msg.media_id}")
-        return create_reply("已收到视频", msg)
-        
-    elif msg_type == 'location':
-        logger.info(f"收到位置消息: ({msg.location_x}, {msg.location_y}) - {msg.label}")
-        return create_reply("已收到位置信息", msg)
-        
-    elif msg_type == 'link':
-        logger.info(f"收到链接消息: {msg.title} - {msg.url}")
-        return create_reply("已收到链接", msg)
+# --- API Routes ---
 
-    # 2. 事件消息处理
-    elif msg_type == 'event':
-        event_type = msg.event
-        logger.info(f"收到事件推送: {event_type}")
+@app.get("/api/todos", response_model=List[TodoItem])
+async def get_todos():
+    return todos_store
+
+@app.post("/api/todos", response_model=TodoItem)
+async def add_todo(todo: TodoItem):
+    todos_store.append(todo)
+    return todo
+
+# New API for AI Analysis Results (Optional, as todos are merged)
+@app.get("/api/analysis-results")
+async def get_analysis_results():
+    # Filter todos that are chat_records
+    return [t for t in todos_store if t.type == "chat_record"]
+
+# --- WeChat Callback Routes ---
+
+@app.get("/wecom/callback")
+async def wechat_verify(
+    msg_signature: str = Query(...),
+    timestamp: str = Query(...),
+    nonce: str = Query(...),
+    echostr: str = Query(...)
+):
+    """
+    企业微信回调验证接口
+    """
+    if not crypto:
+        raise HTTPException(status_code=500, detail="WeChatCrypto not initialized")
         
-        if event_type == 'subscribe':
-            return create_reply("欢迎关注！", msg)
-        elif event_type == 'unsubscribe':
-            logger.info("用户取消关注")
-        elif event_type == 'enter_agent':
-            logger.info("用户进入应用")
-            # return create_reply("欢迎回来！", msg) 
-        elif event_type == 'click':
-            logger.info(f"菜单点击: {msg.key}")
-            return create_reply(f"点击了菜单: {msg.key}", msg)
-        elif event_type == 'view':
-            logger.info(f"菜单跳转: {msg.url}")
-        elif event_type == 'location':
-            logger.info(f"上报地理位置: ({msg.latitude}, {msg.longitude})")
-        elif event_type == 'batch_job_result':
-            logger.info(f"异步任务完成: {msg.job_id}")
+    try:
+        echo_str = crypto.check_signature(msg_signature, timestamp, nonce, echostr)
+        return Response(content=echo_str, media_type="text/plain")
+    except InvalidSignatureException:
+        logger.error("❌ 签名验证失败")
+        raise HTTPException(status_code=403, detail="Invalid Signature")
+    except Exception as e:
+        logger.error(f"❌ 验证过程异常: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/wecom/callback")
+async def wechat_receive(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    msg_signature: str = Query(...),
+    timestamp: str = Query(...),
+    nonce: str = Query(...)
+):
+    """
+    企业微信消息接收接口
+    """
+    if not crypto:
+        raise HTTPException(status_code=500, detail="WeChatCrypto not initialized")
+
+    body = await request.body()
+    try:
+        decrypted_xml = crypto.decrypt_message(body, msg_signature, timestamp, nonce)
+    except InvalidSignatureException:
+        logger.error("❌ 消息签名验证失败")
+        raise HTTPException(status_code=403, detail="Invalid Signature")
+    except Exception as e:
+        logger.error(f"❌ 解密失败: {e}")
+        raise HTTPException(status_code=400, detail="Decryption Failed")
+
+    try:
+        msg = parse_message(decrypted_xml)
+        logger.info(f"📩 收到消息: {msg.type} from {msg.source}")
+
+        if msg.type == 'text':
+            reply = create_reply("已收到您的消息，我是水华精灵助手。", msg).render()
+        elif msg.type == 'image':
+            # 启动后台任务处理图片
+            background_tasks.add_task(process_image_sync, msg.media_id)
+            reply = create_reply("正在分析图片内容生成待办事项，请稍候...", msg).render()
         else:
-            logger.warning(f"未处理的事件类型: {event_type}")
+            reply = create_reply("暂不支持该消息类型", msg).render()
             
-    else:
-        logger.warning(f"未知消息类型: {msg_type}")
+        encrypted_xml = crypto.encrypt_message(reply, nonce, timestamp)
+        return Response(content=encrypted_xml, media_type="application/xml")
         
-    # 默认回复 success (不回复任何内容给用户，且告诉企微处理成功)
-    return "success"
+    except Exception as e:
+        logger.error(f"❌ 消息处理异常: {e}")
+        # Return success to avoid WeChat retrying
+        return Response(content="success", media_type="text/plain")
 
-
-@app.route('/wecom/callback', methods=['GET', 'POST'])
-def wechat_callback():
-    # 获取通用参数
-    msg_signature = request.args.get('msg_signature', '')
-    timestamp = request.args.get('timestamp', '')
-    nonce = request.args.get('nonce', '')
-    
-    if not all([msg_signature, timestamp, nonce]):
-        abort(400, "Missing required parameters")
-
-    # --- GET 请求：URL 验证 ---
-    if request.method == 'GET':
-        echostr = request.args.get('echostr', '')
-        logger.info(f"收到 GET 验证请求: signature={msg_signature}, timestamp={timestamp}, nonce={nonce}")
-        
-        try:
-            echostr = crypto.check_signature(msg_signature, timestamp, nonce, echostr)
-            if isinstance(echostr, bytes):
-                echostr = echostr.decode('utf-8')
-            logger.info("✅ URL 验证成功")
-            return make_response(echostr)
-        except InvalidSignatureException:
-            logger.error("❌ 签名验证失败")
-            abort(403)
-        except Exception as e:
-            logger.error(f"❌ URL 验证异常: {e}")
-            abort(500)
-
-    # --- POST 请求：消息接收 ---
-    if request.method == 'POST':
-        try:
-            # 获取原始 XML 数据
-            xml_data = request.get_data()
-            logger.info(f"收到 POST 请求，数据长度: {len(xml_data)}")
-            
-            # 1. 解密消息
-            decrypted_xml = crypto.decrypt_message(
-                xml_data,
-                msg_signature,
-                timestamp,
-                nonce
-            )
-            logger.debug(f"解密后的 XML: {decrypted_xml}")
-            
-            # 2. 解析消息
-            msg = parse_message(decrypted_xml)
-            logger.info(f"解析消息成功: type={msg.type}, from={msg.source}")
-            
-            # 3. 业务逻辑处理
-            reply = handle_message(msg)
-            
-            # 4. 构造响应
-            if reply == "success":
-                return "success"
-            
-            # 如果是 Reply 对象，需要渲染成 XML 并加密
-            xml_response = reply.render()
-            encrypted_response = crypto.encrypt_message(xml_response, nonce, timestamp)
-            
-            response = make_response(encrypted_response)
-            response.headers['Content-Type'] = 'application/xml'
-            return response
-
-        except InvalidSignatureException:
-            logger.error("❌ 消息签名验证失败")
-            abort(403)
-        except InvalidCorpIdException:
-            logger.error("❌ CorpID 不匹配")
-            abort(403)
-        except Exception as e:
-            logger.error(f"❌ 消息处理异常: {e}")
-            # 即使出错也返回 success，避免企微无限重试
-            return "success"
-
-if __name__ == '__main__':
-    # 监听 8080 端口 (避免 80 端口权限问题)
-    port = 8080
-    logger.info(f"🚀 企业微信消息接收服务已启动，监听端口: {port}")
-    app.run(host="0.0.0.0", port=port, debug=True)
+if __name__ == "__main__":
+    import uvicorn
+    # Use 0.0.0.0 to allow external access
+    uvicorn.run(app, host="0.0.0.0", port=8080)

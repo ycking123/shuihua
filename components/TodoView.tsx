@@ -58,14 +58,22 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
   React.useEffect(() => {
     const fetchTodos = async () => {
       try {
-        const backendUrl = `http://${window.location.hostname}:8002/api/todos`;
+        // Use window.location.hostname to support access from other devices
+        // Port changed to 8080 as requested
+        const backendUrl = `http://${window.location.hostname}:8080/api/todos`;
         const res = await fetch(backendUrl);
         if (res.ok) {
           const data = await res.json();
           setBackendTasks(data);
+        } else {
+            console.error(`Fetch failed with status: ${res.status}`);
+            alert(`无法连接后端服务 (端口 8080)\n状态码: ${res.status}\n原因: ${res.statusText}`);
         }
       } catch (e) {
         console.error("Failed to fetch todos:", e);
+        // Only alert if we haven't alerted recently to avoid spamming
+        // For simplicity in this demo, we'll just log it, but in production consider a toast
+        console.log("Connection error details:", e);
       }
     };
     fetchTodos();

@@ -151,9 +151,9 @@ def process_ai_result_and_push(json_output_str):
             }
             
             try:
-                # 尝试推送到本地后端 (假设运行在 8002)
+                # 尝试推送到本地后端 (假设运行在 8080)
                 print(f"🚀 正在推送任务 '{payload['title']}' 到后端...")
-                res = requests.post("http://localhost:8002/api/todos", json=payload)
+                res = requests.post("http://localhost:8080/api/todos", json=payload)
                 if res.status_code == 200:
                     success_count += 1
                     print(f"✅ 推送成功")

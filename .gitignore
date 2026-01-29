@@ -26,3 +26,10 @@ dist-ssr
 # Environment variables
 .env
 backend/.env
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Test files
+test_image.jpg
