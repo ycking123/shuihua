@@ -58,7 +58,8 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
   React.useEffect(() => {
     const fetchTodos = async () => {
       try {
-        const res = await fetch('http://localhost:8002/api/todos');
+        const backendUrl = `http://${window.location.hostname}:8002/api/todos`;
+        const res = await fetch(backendUrl);
         if (res.ok) {
           const data = await res.json();
           setBackendTasks(data);

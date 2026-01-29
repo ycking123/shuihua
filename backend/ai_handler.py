@@ -85,6 +85,36 @@ def analyze_chat_screenshot_with_glm4v(base64_image_data):
         print(f"❌ AI分析请求失败: {e}")
         return None
 
+def parse_ai_result_to_todos(json_output_str):
+    """解析 AI 返回的 JSON 字符串为待办事项列表"""
+    if not json_output_str:
+        return []
+    try:
+        parsed_json = json.loads(json_output_str)
+        tasks = parsed_json.get('task_list', [])
+        todo_list = []
+        for idx, t in enumerate(tasks):
+            priority_map = {"高": "urgent", "中": "high", "低": "normal"}
+            api_priority = priority_map.get(t.get('priority'), "normal")
+            payload = {
+                "id": f"chat-record-{int(time.time())}-{idx}",
+                "type": "chat_record",
+                "priority": api_priority,
+                "title": f"[{t.get('assignee', '待定')}] {t.get('title')}",
+                "sender": parsed_json.get('summary', '聊天记录分析'),
+                "time": datetime.now().strftime("%H:%M"),
+                "completed": False,
+                "status": "pending",
+                "aiSummary": f"截止日期: {t.get('due_date', '未指定')}",
+                "content": f"任务详情: {t.get('description')}\n责任人: {t.get('assignee')}\n截止时间: {t.get('due_date')}",
+                "isUserTask": False
+            }
+            todo_list.append(payload)
+        return todo_list
+    except json.JSONDecodeError as e:
+        print("❌ JSON 解析失败")
+        return []
+
 def process_ai_result_and_push(json_output_str):
     """
     处理 AI 返回的 JSON 字符串并推送到后端
