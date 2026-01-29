@@ -20,3 +20,30 @@ conda activate water_essence_backend
 $env:Path = $env:Path -replace '"', ''   修复好了，原因是path环境有引号，已经删除了
 conda activate water_essence_backend
 
+6.git
+步骤 4：后续日常开发（Trae IDE → GitHub 同步流程）
+和普通 Git 操作一致，后续在 Trae IDE 中开发完成后，只需在终端执行 3 条命令，即可快速同步到 GitHub：
+bash
+运行
+# 1. 添加所有变更的文件到暂存区
+git add .
+
+# 2. 提交变更，填写清晰的备注
+git commit -m "修复XX Bug：适配老旧服务器运行环境"
+
+# 3. 推送到 GitHub（后续推送无需加 -u，直接执行即可）
+git push
+
+服务器操作：
+# 1. 进入服务器存放代码的目录（例如 /var/www/）
+cd /var/www/
+
+# 2. 第一次拉取：克隆 GitHub 仓库（仅需执行一次）
+git clone https://github.com/你的GitHub用户名/你的仓库名称.git
+
+前面只要第一次做
+
+# 3. 后续更新：进入项目目录，拉取最新代码
+cd 你的仓库名称
+git pull
+这两个就是更新后拉取就行了，然后会之拉取最新的代码，默认增量拉取

@@ -2,7 +2,7 @@ import os
 import logging
 from flask import Flask, request, abort, make_response
 from wechatpy.enterprise.crypto import WeChatCrypto
-from wechatpy.enterprise import parse_message, create_reply
+from wechatpy.enterprise import parse_message, create_reply, WeChatClient
 from wechatpy.enterprise.events import SubscribeEvent, UnsubscribeEvent, ClickEvent, ViewEvent, LocationEvent, BatchJobResultEvent
 from wechatpy.enterprise.messages import TextMessage, ImageMessage, VoiceMessage, VideoMessage, LocationMessage, LinkMessage
 from dotenv import load_dotenv
@@ -34,6 +34,8 @@ load_dotenv(dotenv_path=env_path)
 TOKEN = os.getenv("WECOM_TOKEN")
 EncodingAESKey = os.getenv("WECOM_AES_KEY")
 CORP_ID = os.getenv("WECOM_CORP_ID")
+# 尝试获取 Secret，如果没有则只能接收消息无法下载媒体
+SECRET = os.getenv("WECOM_SECRET") 
 
 if not all([TOKEN, EncodingAESKey, CORP_ID]):
     logger.error("❌ 缺少必要的企业微信配置 (WECOM_TOKEN, WECOM_AES_KEY, WECOM_CORP_ID)，请检查 .env 文件")
@@ -46,7 +48,48 @@ except Exception as e:
     logger.error(f"❌ 初始化 WeChatCrypto 失败: {e}")
     exit(1)
 
+# 初始化 WeChatClient (用于获取媒体文件等主动操作)
+wechat_client = None
+if SECRET:
+    try:
+        wechat_client = WeChatClient(CORP_ID, SECRET)
+    except Exception as e:
+        logger.warning(f"⚠️ 初始化 WeChatClient 失败: {e}，将无法下载图片")
+else:
+    logger.warning("⚠️ 未配置 WECOM_SECRET，将无法下载图片进行 AI 分析")
+
 app = Flask(__name__)
+
+def process_image_async(media_id):
+    """
+    异步处理图片：下载 -> AI分析 -> 推送待办
+    """
+    if not wechat_client:
+        logger.error("❌ 无法处理图片：未初始化 WeChatClient (缺少 WECOM_SECRET)")
+        return
+
+    logger.info(f"🔄 开始后台处理图片 MediaId: {media_id}")
+    try:
+        # 1. 从企业微信下载图片
+        response = wechat_client.media.download(media_id)
+        image_content = response.content
+        
+        # 2. 转为 Base64
+        base64_data = base64.b64encode(image_content).decode('utf-8')
+        logger.info("✅ 图片下载并转码成功")
+
+        # 3. 调用 AI 分析
+        json_result = analyze_chat_screenshot_with_glm4v(base64_data)
+        
+        # 4. 推送结果
+        if json_result:
+            process_ai_result_and_push(json_result)
+            logger.info("✅ 图片分析及推送流程完成")
+        else:
+            logger.warning("⚠️ AI 分析未返回有效 JSON")
+
+    except Exception as e:
+        logger.error(f"❌ 图片处理流程异常: {e}")
 
 # --- 消息处理器 ---
 def handle_message(msg):
@@ -61,7 +104,11 @@ def handle_message(msg):
     
     elif msg_type == 'image':
         logger.info(f"收到图片消息，MediaId: {msg.media_id}")
-        return create_reply("已收到图片", msg)
+        
+        # 开启线程异步处理图片，避免阻塞微信回调（需在5秒内响应）
+        threading.Thread(target=process_image_async, args=(msg.media_id,)).start()
+        
+        return create_reply("正在为您分析图片中的待办事项，请稍候...", msg)
         
     elif msg_type == 'voice':
         logger.info(f"收到语音消息，MediaId: {msg.media_id}")
