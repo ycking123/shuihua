@@ -1,0 +1,22 @@
+1.前端运行过程的调整 
+- 环境适配 ：检测到当前 Node.js 版本为 v16.16.0 ，而原项目配置的 Vite 6 需要 Node.js 18+。为了确保项目能顺利运行，我将 Vite 降级到了兼容的 v4.5.5 版本，并相应调整了插件版本。
+- 修复缺失文件 ：发现 index.html 引用了不存在的 index.css ，导致浏览器报错。我创建了一个空的 index.css 文件来解决这个问题。
+
+
+2.相关环境变量在.env.local 文件，如果需要可以在这个文件夹找
+
+3.创建Python环境使用conda环境，环境名使用和文件名字相同或者也可以翻译成对应英文
+
+4.前端改动，请做好封装，尽量只做增加，不修改原来的函数；对前端的修改写在下面：
+A：
+
+5.
+运行后端： python -m uvicorn backend.main:app --host 0.0.0.0 --port 8002
+运行前端： npm run dev
+
+5.运行环境：
+conda activate water_essence_backend
+
+$env:Path = $env:Path -replace '"', ''   修复好了，原因是path环境有引号，已经删除了
+conda activate water_essence_backend
+
