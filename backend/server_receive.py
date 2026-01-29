@@ -7,6 +7,10 @@ from wechatpy.enterprise.events import SubscribeEvent, UnsubscribeEvent, ClickEv
 from wechatpy.enterprise.messages import TextMessage, ImageMessage, VoiceMessage, VideoMessage, LocationMessage, LinkMessage
 from dotenv import load_dotenv
 from pathlib import Path
+import base64
+import requests
+import threading
+from backend.ai_handler import analyze_chat_screenshot_with_glm4v, process_ai_result_and_push
 
 # --- 异常处理兼容性修正 ---
 try:
