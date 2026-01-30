@@ -1,5 +1,5 @@
 {
-  "name": "水华精灵-(water-essence-sprite)",
+  "name": "water-essence-sprite",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -9,14 +9,16 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@google/genai": "^1.37.0",
+    "lucide-react": "^0.562.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
-    "recharts": "^3.6.0",
-    "lucide-react": "^0.562.0",
-    "@google/genai": "^1.37.0"
+    "recharts": "^3.6.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "@types/react": "^19.2.10",
+    "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.2.1",
     "typescript": "~5.8.2",
     "vite": "^4.5.5"

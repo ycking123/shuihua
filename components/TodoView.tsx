@@ -59,15 +59,15 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
     const fetchTodos = async () => {
       try {
         // Use window.location.hostname to support access from other devices
-        // Port changed to 8080 as requested
-        const backendUrl = `http://${window.location.hostname}:8080/api/todos`;
+        // Port changed to 8000 (Unified Server)
+        const backendUrl = `http://${window.location.hostname}:8000/api/todos`;
         const res = await fetch(backendUrl);
         if (res.ok) {
           const data = await res.json();
           setBackendTasks(data);
         } else {
             console.error(`Fetch failed with status: ${res.status}`);
-            alert(`无法连接后端服务 (端口 8080)\n状态码: ${res.status}\n原因: ${res.statusText}`);
+            // alert(`无法连接后端服务 (端口 8000)\n状态码: ${res.status}\n原因: ${res.statusText}`);
         }
       } catch (e) {
         console.error("Failed to fetch todos:", e);
