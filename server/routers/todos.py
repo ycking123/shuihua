@@ -32,10 +32,10 @@ async def add_todo(todo: TodoItem):
     todos_store.insert(0, todo)
     return todo
 
-def create_todo_internal(title: str, summary: str, priority: str = "high"):
+def create_todo_internal(title: str, summary: str, priority: str = "high", category: str = "chat_record"):
     new_todo = TodoItem(
         id=str(uuid.uuid4()),
-        type="chat_record",
+        type=category,
         priority=priority,
         title=title,
         sender="AI智僚",
@@ -46,3 +46,4 @@ def create_todo_internal(title: str, summary: str, priority: str = "high"):
     )
     todos_store.insert(0, new_todo)
     return new_todo
+

@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   CheckSquare, Sparkles, ChevronLeft, Search, 
   Layers, Inbox, Coffee, ShieldCheck, Trash2,
@@ -58,22 +59,18 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
   React.useEffect(() => {
     const fetchTodos = async () => {
       try {
-        // Use window.location.hostname to support access from other devices
-        // Port changed to 8000 (Unified Server)
-        const backendUrl = `http://${window.location.hostname}:8000/api/todos`;
+        // Use hostname to adapt to both local and server environments
+        const hostname = window.location.hostname;
+        const backendUrl = `http://${hostname}:8000/api/todos`;
         const res = await fetch(backendUrl);
         if (res.ok) {
           const data = await res.json();
           setBackendTasks(data);
         } else {
             console.error(`Fetch failed with status: ${res.status}`);
-            // alert(`无法连接后端服务 (端口 8000)\n状态码: ${res.status}\n原因: ${res.statusText}`);
         }
       } catch (e) {
         console.error("Failed to fetch todos:", e);
-        // Only alert if we haven't alerted recently to avoid spamming
-        // For simplicity in this demo, we'll just log it, but in production consider a toast
-        console.log("Connection error details:", e);
       }
     };
     fetchTodos();
@@ -87,14 +84,19 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
     { id: 'email', label: '邮件', icon: Inbox },
     { id: 'meeting', label: '会议', icon: Coffee },
     { id: 'approval', label: '审批', icon: ShieldCheck },
-    { id: 'chat_record', label: '聊天记录', icon: MessageSquare },
+    { id: 'chat_record', label: '其他', icon: MessageSquare },
   ];
 
   const getCount = (id: string) => {
-    const pendingSystemCount = TODOS_DATA.filter(i => i.status === 'pending').length;
-    const pendingUserCount = userTasks.filter(i => !i.completed).length;
-    if (id === 'all') return pendingSystemCount + pendingUserCount;
-    return TODOS_DATA.filter(i => i.type === id && i.status === 'pending').length;
+    const all = [...TODOS_DATA, ...userTasks, ...backendTasks];
+    return all.filter(task => {
+      // Determine if task is pending
+      const isPending = task.status === 'pending' || (task.completed === false);
+      // Check if task matches the category
+      // userTasks have type 'task' which is not in standard categories, so they only show in 'all'
+      const matchesType = id === 'all' || task.type === id;
+      return isPending && matchesType;
+    }).length;
   };
 
   const handleAddUserTask = () => {
@@ -312,17 +314,20 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
       </div>
 
       {/* 任务详情抽屉 */}
-      {selectedItem && (
-        <div className="fixed inset-0 z-[120] bg-white dark:bg-black animate-in slide-in-from-right duration-300 overflow-y-auto pb-32 transition-colors duration-500">
-          <div className="sticky top-0 bg-white/80 dark:bg-black/80 backdrop-blur-xl border-b border-slate-200 dark:border-white/5 p-4 flex items-center justify-between z-10">
-            <button onClick={() => setSelectedItem(null)} className="p-2 text-slate-500 flex items-center gap-1 active:scale-90 transition-transform">
-                <ChevronLeft size={20} />
-                <span className="text-xs font-bold uppercase tracking-widest">返回</span>
+      {selectedItem && createPortal(
+        <div className="fixed inset-0 z-[200] bg-white dark:bg-black animate-in slide-in-from-right duration-300 flex flex-col transition-colors duration-500">
+          <div className="shrink-0 bg-white/95 dark:bg-black/95 backdrop-blur-xl border-b border-slate-200 dark:border-white/5 p-4 flex items-center justify-between z-50 shadow-sm safe-area-top">
+            <button 
+              onClick={() => setSelectedItem(null)} 
+              className="px-4 py-2 bg-slate-100 dark:bg-white/10 rounded-full text-slate-900 dark:text-white flex items-center gap-2 active:scale-90 transition-all hover:bg-slate-200 dark:hover:bg-white/20"
+            >
+                <ChevronLeft size={18} />
+                <span className="text-xs font-bold uppercase tracking-widest">返回列表</span>
             </button>
             <div className="text-[9px] font-bold text-slate-400 dark:text-slate-600 tracking-[0.3em] uppercase">执行情报视图</div>
           </div>
 
-          <div className="p-6 space-y-8">
+          <div className="flex-1 overflow-y-auto p-6 space-y-8 pb-32 safe-area-bottom">
              <div className="space-y-4">
                 <div className="flex items-center gap-2">
                   <PriorityTag priority={selectedItem.priority} />
@@ -368,10 +373,12 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
                 </div>
              </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
 };
 
 export default TodoView;
+

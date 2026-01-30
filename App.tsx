@@ -40,15 +40,22 @@ const App: React.FC = () => {
       </header>
 
       {/* 主内容区域 */}
-      <main className="flex-1 overflow-y-auto pb-32 no-scrollbar scroll-smooth">
-        {activeView === ViewType.DASHBOARD && <Dashboard onNavigate={handleNavigate} />}
-        {activeView === ViewType.CHAT && (
+      <main className="flex-1 overflow-hidden relative">
+        <div className={`absolute inset-0 transition-opacity duration-300 overflow-y-auto pb-32 no-scrollbar ${activeView === ViewType.DASHBOARD ? 'opacity-100 z-10' : 'opacity-0 -z-10 pointer-events-none'}`}>
+          <Dashboard onNavigate={handleNavigate} />
+        </div>
+        
+        <div className={`absolute inset-0 transition-opacity duration-300 ${activeView === ViewType.CHAT ? 'opacity-100 z-10' : 'opacity-0 -z-10 pointer-events-none'}`}>
           <ChatView 
             initialContext={chatContext} 
             onClearContext={() => setChatContext(null)} 
           />
-        )}
-        {activeView === ViewType.TODO && <TodoView onNavigate={handleNavigate} />}
+        </div>
+
+        <div className={`absolute inset-0 transition-opacity duration-300 ${activeView === ViewType.TODO ? 'opacity-100 z-10' : 'opacity-0 -z-10 pointer-events-none'}`}>
+          <TodoView onNavigate={handleNavigate} />
+        </div>
+
         {activeView === ViewType.SETTINGS && <PersonalView />}
       </main>
 
@@ -62,3 +69,4 @@ const App: React.FC = () => {
 };
 
 export default App;
+

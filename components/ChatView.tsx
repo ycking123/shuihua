@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Brain } from 'lucide-react';
+import { Send, Brain, Database } from 'lucide-react';
 import OntologySphere from './OntologySphere';
 
 interface Message {
@@ -12,6 +12,7 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');    
   const [isThinking, setIsThinking] = useState(false); 
+  const [isRagEnabled, setIsRagEnabled] = useState(false);
   const [sphereStatus, setSphereStatus] = useState<'idle' | 'thinking' | 'working'>('idle');
   const messagesEndRef = useRef<HTMLDivElement>(null); 
 
@@ -44,11 +45,14 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
     setMessages(prev => [...prev, { id: agentMsgId, type: 'agent', content: '' }]);
 
     try {
-      const response = await fetch('http://localhost:8000/api/chat', {
+      // Use explicit Aliyun IP as requested
+      const backendUrl = 'http://47.121.138.58:8000/api/chat';
+      const response = await fetch(backendUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
-            messages: [...messages.map(m => ({ role: m.type === 'user' ? 'user' : 'assistant', content: m.content })), { role: 'user', content }] 
+            messages: [...messages.map(m => ({ role: m.type === 'user' ? 'user' : 'assistant', content: m.content })), { role: 'user', content }],
+            use_rag: isRagEnabled
           }) 
       });
 
@@ -167,9 +171,22 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
         <div className="max-w-2xl mx-auto relative group">
             <div className="absolute inset-0 bg-blue-600/5 dark:bg-blue-900/10 blur-[30px] rounded-[2rem] -z-10 group-focus-within:bg-blue-600/10 dark:group-focus-within:bg-blue-800/20 transition-all"></div>
             <div className="relative glass-card bg-white/95 dark:bg-black/70 backdrop-blur-3xl rounded-[2rem] border-slate-200 dark:border-white/10 p-1 flex items-center shadow-2xl">
-                <div className="px-4 text-slate-400 dark:text-slate-600">
+                <div className="px-3 text-slate-400 dark:text-slate-600">
                     <Brain size={18} className={isThinking ? 'animate-pulse text-blue-600 dark:text-blue-400' : ''} />
                 </div>
+                
+                <button
+                    onClick={() => setIsRagEnabled(!isRagEnabled)}
+                    className={`mr-2 px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-all text-[10px] font-bold uppercase tracking-wider ${
+                      isRagEnabled 
+                      ? 'bg-blue-600/10 text-blue-600 border border-blue-600/20' 
+                      : 'bg-slate-100 dark:bg-white/5 text-slate-400 dark:text-slate-600 hover:bg-slate-200 dark:hover:bg-white/10'
+                    }`}
+                >
+                    <Database size={12} />
+                    {isRagEnabled ? 'RAG ON' : 'RAG OFF'}
+                </button>
+
                 <input
                     type="text"
                     value={inputValue}

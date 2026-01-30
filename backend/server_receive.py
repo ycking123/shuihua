@@ -2,7 +2,7 @@ import os
 import logging
 import json
 import base64
-import asyncio
+import time
 from typing import List, Optional
 from datetime import datetime
 from pathlib import Path
@@ -24,7 +24,13 @@ except ImportError:
     from wechatpy.exceptions import InvalidSignatureException, InvalidAppIdException as InvalidCorpIdException
 
 # --- Internal Imports ---
-from backend.ai_handler import analyze_chat_screenshot_with_glm4v, parse_ai_result_to_todos
+from backend.ai_handler import analyze_chat_screenshot_with_glm4v, parse_ai_result_to_todos, analyze_text_message, analyze_intent, extract_meeting_info
+
+try:
+    from pypinyin import lazy_pinyin
+except ImportError:
+    lazy_pinyin = None
+    print("⚠️ pypinyin module not found. Name conversion will be disabled.")
 
 # --- Logging Setup ---
 logging.basicConfig(
@@ -137,12 +143,40 @@ class TodoItem(BaseModel):
     aiAction: Optional[str] = None
     content: Optional[str] = None
     isUserTask: bool = False
+    textType: int = 0  # 0: Image/Default, 1: Text Message
 
 # --- Global Storage ---
 todos_store: List[TodoItem] = []
 
 # --- Helper Functions ---
-def process_image_sync(media_id: str):
+def convert_name_to_userid(name: str) -> str:
+    """
+    尝试将中文姓名转换为 UserID
+    1. 优先使用通讯录搜索（如果有权限）
+    2. 降级为拼音 UserID (首字母大写)
+    """
+    # 动态检查 pypinyin 是否可用（防止服务启动时未安装）
+    global lazy_pinyin
+    if lazy_pinyin is None:
+        try:
+            from pypinyin import lazy_pinyin
+            logger.info("✅ pypinyin module loaded dynamically.")
+        except ImportError:
+            logger.error("❌ pypinyin module not found. Cannot convert name to UserID.")
+            return name
+    
+    # 策略 1: 拼音转换
+    try:
+        pinyin_list = lazy_pinyin(name)
+        # Title case each part: 张笑颜 -> ZhangXiaoYan
+        userid = "".join([p.title() for p in pinyin_list])
+        logger.info(f"🔄 Name Conversion: {name} -> {userid}")
+        return userid
+    except Exception as e:
+        logger.error(f"❌ Name conversion failed for {name}: {e}")
+        return name
+
+def process_image_sync(media_id: str, user_id: str = None):
     """
     Synchronous function to process image, to be run in background task.
     """
@@ -150,7 +184,7 @@ def process_image_sync(media_id: str):
         logger.error("❌ 无法处理图片：未初始化 WeChatClient (缺少 WECOM_SECRET)")
         return
 
-    logger.info(f"🔄 开始后台处理图片 MediaId: {media_id}")
+    logger.info(f"🔄 开始后台处理图片 MediaId: {media_id} from User: {user_id}")
     try:
         # 1. Download image
         response = wechat_client.media.download(media_id)
@@ -166,7 +200,7 @@ def process_image_sync(media_id: str):
         
         # 4. Parse and Store Results
         if json_result:
-            new_todos = parse_ai_result_to_todos(json_result)
+            new_todos = parse_ai_result_to_todos(json_result, user_id)
             if new_todos:
                 for todo_data in new_todos:
                     # Convert dict to TodoItem model
@@ -184,6 +218,129 @@ def process_image_sync(media_id: str):
 
     except Exception as e:
         logger.error(f"❌ 图片处理流程异常: {e}")
+
+def create_wecom_meeting(meeting_info, creator_id):
+    """
+    通过企业微信 API 创建日程 (Schedule)
+    """
+    if not wechat_client:
+        logger.error("❌ 无法创建会议：未初始化 WeChatClient")
+        return False
+        
+    try:
+        # 使用 OA 日程接口 (schedule)
+        # https://developer.work.weixin.qq.com/document/path/93648
+        
+        # 构造参与者列表 (包含创建者)
+        # 注意: 真实环境需要将 extracted names 转换为 userids
+        # 这里仅演示将 creator_id 加入参与者，确保用户能看到日程
+        attendee_list = [{"userid": creator_id}]
+        
+        # 处理 AI 提取的参会人
+        extracted_attendees = meeting_info.get("attendees", [])
+        for name in extracted_attendees:
+            # 简单去重 (如果名字和 creator_id 相同则跳过)
+            # 注意: 这里假设 creator_id 已经是 UserID 格式，而 name 可能是中文
+            # 实际生产中应更严谨判断
+            if name == creator_id:
+                continue
+                
+            userid = convert_name_to_userid(name)
+            if userid:
+                attendee_list.append({"userid": userid})
+        
+        # 必需参数
+        start_time = int(meeting_info.get("start_time", time.time() + 1800))
+        end_time = start_time + int(meeting_info.get("duration", 3600))
+        summary = meeting_info.get("topic", "临时会议")
+        
+        payload = {
+            "schedule": {
+                "summary": summary,
+                "description": f"由 AI 助手自动创建。\n详情: {summary}",
+                "start_time": start_time,
+                "end_time": end_time,
+                "attendees": attendee_list
+                # "cal_id": "" # 不填则使用应用默认日历
+            }
+        }
+        
+        # 调用 wechatpy client 的 post 方法直接请求 API
+        res = wechat_client.post('oa/schedule/add', data=payload)
+        logger.info(f"✅ 会议创建成功: {res}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ 创建会议失败: {e}")
+        # 如果是因为 UserID 不存在，尝试降级处理（仅创建者自己可见）
+        if "60111" in str(e):
+             logger.warning("⚠️ 检测到 UserID 错误，尝试移除参会人重新创建...")
+             try:
+                 # 重置参与者列表，仅保留创建者
+                 payload["schedule"]["attendees"] = [{"userid": creator_id}]
+                 res = wechat_client.post('oa/schedule/add', data=payload)
+                 logger.info(f"✅ (降级) 会议创建成功: {res}")
+                 return True
+             except Exception as retry_e:
+                 logger.error(f"❌ (降级) 创建会议再次失败: {retry_e}")
+                 
+        return False
+
+def process_text_sync(text_content: str, user_id: str = None):
+    """
+    Synchronous function to process text message
+    """
+    logger.info(f"📝 开始后台处理文本消息 from User: {user_id}")
+    try:
+        # 1. Analyze Intent
+        intent = analyze_intent(text_content)
+        logger.info(f"🧠 意图识别结果: {intent}")
+        
+        if intent == "meeting":
+            # Process Meeting
+            meeting_info = extract_meeting_info(text_content)
+            logger.info(f"📅 提取会议信息: {meeting_info}")
+            
+            # Create Meeting
+            if create_wecom_meeting(meeting_info, user_id):
+                # Notify success (optional, could add a system notification todo)
+                pass
+            else:
+                # Fallback to todo if meeting creation fails? Or just log error
+                pass
+                
+        else:
+            # Process Todo (Original Logic)
+            # 1. Call AI Analysis (reuse logic)
+            json_result = analyze_text_message(text_content)
+            
+            # 2. Parse and Store Results
+            if json_result:
+                new_todos = parse_ai_result_to_todos(json_result, user_id)
+                if new_todos:
+                    for todo_data in new_todos:
+                        # Update specific fields for text message
+                        todo_data['textType'] = 1
+                        
+                        # Fallback defaults if AI missed them (though AI prompt handles most)
+                        if todo_data.get('title') == "待定":
+                            todo_data['title'] = text_content[:50]
+                        
+                        # Convert dict to TodoItem model
+                        try:
+                            todo_item = TodoItem(**todo_data)
+                            todos_store.insert(0, todo_item)
+                            logger.info(f"✅ 新增文本待办事项: {todo_item.title}")
+                        except Exception as e:
+                            logger.error(f"❌ 数据模型转换失败: {e}")
+                    logger.info(f"✅ 文本分析完成，已添加 {len(new_todos)} 条待办")
+                else:
+                    logger.warning("⚠️ 文本AI分析结果解析为空")
+            else:
+                logger.warning("⚠️ 文本AI分析未返回有效 JSON")
+
+    except Exception as e:
+        logger.error(f"❌ 文本处理流程异常: {e}")
 
 # --- API Routes ---
 
@@ -256,10 +413,12 @@ async def wechat_receive(
         logger.info(f"📩 收到消息: {msg.type} from {msg.source}")
 
         if msg.type == 'text':
-            reply = create_reply("已收到您的消息，我是水华精灵助手。", msg).render()
+            # 启动后台任务处理文本
+            background_tasks.add_task(process_text_sync, msg.content, msg.source)
+            reply = create_reply("已收到您的文本消息，正在分析生成待办...", msg).render()
         elif msg.type == 'image':
             # 启动后台任务处理图片
-            background_tasks.add_task(process_image_sync, msg.media_id)
+            background_tasks.add_task(process_image_sync, msg.media_id, msg.source)
             reply = create_reply("正在分析图片内容生成待办事项，请稍候...", msg).render()
         else:
             reply = create_reply("暂不支持该消息类型", msg).render()
