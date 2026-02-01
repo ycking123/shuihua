@@ -19,6 +19,7 @@ class TodoItem(BaseModel):
     aiAction: Optional[str] = None
     content: Optional[str] = None
     isUserTask: bool = False
+    textType: int = 0  # 0: Image/Default, 1: Text Message
 
 # Global in-memory store
 todos_store: List[TodoItem] = []
@@ -46,4 +47,5 @@ def create_todo_internal(title: str, summary: str, priority: str = "high", categ
     )
     todos_store.insert(0, new_todo)
     return new_todo
+
 

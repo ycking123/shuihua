@@ -3,6 +3,7 @@ import logging
 import json
 import base64
 import time
+import httpx
 from typing import List, Optional
 from datetime import datetime
 from pathlib import Path
@@ -148,6 +149,24 @@ class TodoItem(BaseModel):
 # --- Global Storage ---
 todos_store: List[TodoItem] = []
 
+def sync_todo_to_main_server(todo_item: TodoItem):
+    """
+    Syncs the new todo item to the main server (port 8000).
+    """
+    try:
+        # Assuming main server is on localhost:8000
+        # In a real deployment, this might need a configurable URL
+        url = "http://localhost:8000/api/todos"
+        # Use a timeout to prevent blocking for too long
+        response = httpx.post(url, json=todo_item.dict(), timeout=5.0)
+        if response.status_code == 200:
+            logger.info(f"✅ 同步待办到主服务器成功: {todo_item.title}")
+        else:
+            logger.error(f"❌ 同步待办到主服务器失败: Status {response.status_code}, {response.text}")
+    except Exception as e:
+        logger.error(f"❌ 同步待办到主服务器异常: {e}")
+
+
 # --- Helper Functions ---
 def convert_name_to_userid(name: str) -> str:
     """
@@ -207,6 +226,8 @@ def process_image_sync(media_id: str, user_id: str = None):
                     try:
                         todo_item = TodoItem(**todo_data)
                         todos_store.insert(0, todo_item) # Add to top
+                        # Sync to main server
+                        sync_todo_to_main_server(todo_item)
                         logger.info(f"✅ 新增待办事项: {todo_item.title}")
                     except Exception as e:
                         logger.error(f"❌ 数据模型转换失败: {e}")
@@ -304,7 +325,32 @@ def process_text_sync(text_content: str, user_id: str = None):
             # Create Meeting
             if create_wecom_meeting(meeting_info, user_id):
                 # Notify success (optional, could add a system notification todo)
-                pass
+                try:
+                    # Construct meeting todo item
+                    meeting_time_str = datetime.fromtimestamp(meeting_info.get("start_time")).strftime("%Y-%m-%d %H:%M")
+                    
+                    todo_item = TodoItem(
+                        id=f"meeting-{int(time.time())}",
+                        type="meeting",
+                        priority="high",
+                        title=f"📅 {meeting_info.get('topic', '会议')}",
+                        sender="会议助手",
+                        time=datetime.now().strftime("%H:%M"),
+                        status="pending",
+                        aiSummary=f"时间: {meeting_time_str}",
+                        content=f"会议主题: {meeting_info.get('topic')}\n时间: {meeting_time_str}\n时长: {int(meeting_info.get('duration', 3600)/60)}分钟\n参会人: {', '.join(meeting_info.get('attendees', []))}",
+                        isUserTask=False
+                    )
+                    
+                    # Store locally
+                    todos_store.insert(0, todo_item)
+                    
+                    # Sync to main server
+                    sync_todo_to_main_server(todo_item)
+                    logger.info(f"✅ 新增会议待办事项: {todo_item.title}")
+                    
+                except Exception as e:
+                    logger.error(f"❌ 创建会议待办失败: {e}")
             else:
                 # Fallback to todo if meeting creation fails? Or just log error
                 pass
@@ -330,6 +376,8 @@ def process_text_sync(text_content: str, user_id: str = None):
                         try:
                             todo_item = TodoItem(**todo_data)
                             todos_store.insert(0, todo_item)
+                            # Sync to main server
+                            sync_todo_to_main_server(todo_item)
                             logger.info(f"✅ 新增文本待办事项: {todo_item.title}")
                         except Exception as e:
                             logger.error(f"❌ 数据模型转换失败: {e}")
@@ -351,6 +399,8 @@ async def get_todos():
 @app.post("/api/todos", response_model=TodoItem)
 async def add_todo(todo: TodoItem):
     todos_store.append(todo)
+    # Also sync to main server when receiving via API
+    sync_todo_to_main_server(todo)
     return todo
 
 # New API for AI Analysis Results (Optional, as todos are merged)
@@ -435,3 +485,4 @@ if __name__ == "__main__":
     import uvicorn
     # Use 0.0.0.0 to allow external access
     uvicorn.run(app, host="0.0.0.0", port=8080)
+
