@@ -7,3 +7,10 @@ websockets
 zhipuai
 tavily-python
 google-generativeai
+sqlalchemy
+pymysql
+mysql-connector-python
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+

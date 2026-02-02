@@ -4,7 +4,8 @@ export enum ViewType {
   CHAT = 'chat',
   TODO = 'todo',
   ALERTS = 'alerts',
-  SETTINGS = 'settings'
+  SETTINGS = 'settings',
+  LOGIN = 'login'
 }
 
 export interface KpiData {
@@ -44,3 +45,4 @@ export interface Edge {
   from: string;
   to: string;
 }
+

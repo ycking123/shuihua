@@ -1,18 +1,32 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import MobileNav from './components/MobileNav';
 import Dashboard from './components/Dashboard';
 import ChatView from './components/ChatView';
 import TodoView from './components/TodoView';
 import PersonalView from './components/PersonalView';
 import ArchitectureCanvas from './components/ArchitectureCanvas';
+import LoginView from './components/LoginView';
 import { ViewType } from './types';
 import { User } from 'lucide-react';
 
 const App: React.FC = () => {
-  const [activeView, setActiveView] = useState<ViewType>(ViewType.DASHBOARD);
+  const [activeView, setActiveView] = useState<ViewType>(ViewType.LOGIN);
   const [chatContext, setChatContext] = useState<string | null>(null);
   const [showDevMode, setShowDevMode] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  useEffect(() => {
+    // Check for token on mount
+    const token = localStorage.getItem('token');
+    if (token) {
+      setIsAuthenticated(true);
+      setActiveView(ViewType.DASHBOARD);
+    } else {
+      setIsAuthenticated(false);
+      setActiveView(ViewType.LOGIN);
+    }
+  }, []);
 
   const handleNavigate = (view: ViewType, context?: string) => {
     if (context) {
@@ -20,6 +34,25 @@ const App: React.FC = () => {
     }
     setActiveView(view);
   };
+
+  const handleLoginSuccess = (token: string, username: string) => {
+    localStorage.setItem('token', token);
+    localStorage.setItem('username', username);
+    setIsAuthenticated(true);
+    setActiveView(ViewType.DASHBOARD);
+  };
+  
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('username');
+    setIsAuthenticated(false);
+    setActiveView(ViewType.LOGIN);
+  };
+
+  // If showing Login View (special case without layout)
+  if (activeView === ViewType.LOGIN) {
+      return <LoginView onLoginSuccess={handleLoginSuccess} />;
+  }
 
   return (
     <div className="flex flex-col h-screen bg-slate-50 dark:bg-black font-sans antialiased text-slate-900 dark:text-white overflow-hidden relative transition-colors duration-500">
@@ -36,6 +69,9 @@ const App: React.FC = () => {
           >
             <User size={16} className="text-white" />
           </div>
+          <button onClick={handleLogout} className="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-300">
+             退出
+          </button>
         </div>
       </header>
 

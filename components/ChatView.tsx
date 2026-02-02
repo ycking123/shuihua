@@ -45,8 +45,18 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
     setMessages(prev => [...prev, { id: agentMsgId, type: 'agent', content: '' }]);
 
     try {
-      // Use explicit Aliyun IP as requested
-      const backendUrl = 'http://47.121.138.58:8000/api/chat';
+      // Determine backend URL based on environment
+      const getBackendUrl = () => {
+          const hostname = window.location.hostname;
+          // If local development, connect to the specified Aliyun server
+          if (hostname === 'localhost' || hostname === '127.0.0.1') {
+               return 'http://47.121.138.58:8000/api/chat';
+          }
+          // Otherwise use the same hostname as the frontend
+          return `http://${hostname}:8000/api/chat`;
+      };
+
+      const backendUrl = getBackendUrl();
       const response = await fetch(backendUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -89,10 +99,11 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
           }
         }
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      const errorMessage = e.message || 'Unknown error';
       setMessages(prev => prev.map(m => 
-        m.id === agentMsgId ? { ...m, content: "系统连接异常，请确保后端服务已在 8000 端口启动。" } : m
+        m.id === agentMsgId ? { ...m, content: `系统连接异常: ${errorMessage}。请确保后端服务已在 8000 端口启动。` } : m
       ));
     } finally {
       setIsThinking(false);
@@ -213,3 +224,5 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
 };
 
 export default ChatView;
+
+

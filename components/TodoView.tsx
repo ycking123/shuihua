@@ -61,16 +61,24 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
       try {
         // Use hostname to adapt to both local and server environments
         const hostname = window.location.hostname;
-        const backendUrl = `http://${hostname}:8000/api/todos`;
+        let backendUrl = `http://${hostname}:8000/api/todos`;
+        
+        // If local development, connect to the specified Aliyun server
+        if (hostname === 'localhost' || hostname === '127.0.0.1') {
+             backendUrl = 'http://47.121.138.58:8000/api/todos';
+        }
+
         const res = await fetch(backendUrl);
         if (res.ok) {
           const data = await res.json();
           setBackendTasks(data);
         } else {
             console.error(`Fetch failed with status: ${res.status}`);
+            // Do not throw, just log. 
         }
-      } catch (e) {
+      } catch (e: any) {
         console.error("Failed to fetch todos:", e);
+        // Maybe show a toast or small error indicator in UI, but for now just console
       }
     };
     fetchTodos();
@@ -381,4 +389,5 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
 };
 
 export default TodoView;
+
 

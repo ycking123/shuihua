@@ -4,24 +4,41 @@ import uvicorn
 from pathlib import Path
 from dotenv import load_dotenv
 import os
+from contextlib import asynccontextmanager
 
 # Load environment variables from .env.local in root
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(dotenv_path=BASE_DIR / ".env.local")
 
 # Import routers
-# Try relative import first (if running as package), then absolute (if running as script)
-try:
-    from .routers import asr, chat, todos
-except ImportError:
-    from routers import asr, chat, todos
+# Using relative imports as we are running as a module (python -m server.main)
+from .routers import asr, chat, todos, auth
+from .database import engine, Base
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Create tables if not exist (optional, better to use Alembic migrations)
+    # async with engine.begin() as conn:
+    #     await conn.run_sync(Base.metadata.create_all)
+    print("Database connection initialized")
+    yield
+    # Shutdown
+    engine.dispose()
+    print("Database connection closed")
+
+app = FastAPI(lifespan=lifespan)
 
 # 配置 CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+        "http://47.121.138.58:3000",
+        "http://47.121.138.58:5173",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -31,14 +48,16 @@ app.add_middleware(
 app.include_router(asr.router)
 app.include_router(chat.router)
 app.include_router(todos.router)
+app.include_router(auth.router)
 
 @app.get("/api/health")
 def read_root():
     return {
         "status": "ok", 
-        "message": "Python Backend is running (Refactored)!", 
+        "message": "Python Backend is running (Refactored with MySQL)!", 
         "framework": "FastAPI"
     }
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
