@@ -36,6 +36,30 @@ SessionLocal = sessionmaker(
 # 声明模型基类
 Base = declarative_base()
 
+def init_db():
+    """
+    Ensure the database exists before creating tables.
+    """
+    from sqlalchemy import text
+    try:
+        # Try to connect to the specific database
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception as e:
+        # If database does not exist (MySQL error 1049)
+        if "1049" in str(e) or "Unknown database" in str(e):
+            print(f"Database '{DB_NAME}' does not exist. Creating it...")
+            # Connect to MySQL server without database selected
+            root_url = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/?charset=utf8mb4"
+            root_engine = create_engine(root_url)
+            with root_engine.connect() as conn:
+                conn.execute(text(f"CREATE DATABASE IF NOT EXISTS {DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"))
+            print(f"Database '{DB_NAME}' created successfully.")
+            # Dispose old engine to force reconnection
+            engine.dispose()
+        else:
+            raise e
+
 # 依赖注入函数
 def get_db():
     session = SessionLocal()
@@ -43,4 +67,5 @@ def get_db():
         yield session
     finally:
         session.close()
+
 

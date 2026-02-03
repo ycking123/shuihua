@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, Field
 from typing import List, Optional
 import uuid
@@ -8,6 +8,7 @@ from sqlalchemy import desc
 
 from ..database import get_db
 from ..models import Todo
+from ..security import verify_token
 # 为了避免循环导入，不要直接导入 create_todo_internal，而是将其重构为依赖注入的服务函数
 
 router = APIRouter()
@@ -52,19 +53,62 @@ def db_to_schema(db_item: Todo) -> TodoItemSchema:
     )
 
 @router.get("/api/todos", response_model=List[TodoItemSchema])
-def get_todos(db: Session = Depends(get_db)):
-    # 查询所有非删除的 Todos，按创建时间倒序
-    todos = db.query(Todo).filter(Todo.is_deleted == False).order_by(desc(Todo.created_at)).all()
+def get_todos(http_request: Request, db: Session = Depends(get_db)):
+    # Extract user_id from token if available
+    user_id = "00000000-0000-0000-0000-000000000000"
+    auth_header = http_request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+        try:
+            payload = verify_token(token)
+            if payload and "user_id" in payload:
+                user_id = payload["user_id"]
+        except Exception:
+            pass
+            
+    # Query todos for this user (or default user if no token)
+    # Also include tasks assigned to "Sender" if they belong to this user session context (simplified for now)
+    todos = db.query(Todo).filter(
+        Todo.is_deleted == False,
+        Todo.user_id == user_id
+    ).order_by(desc(Todo.created_at)).all()
+    
     return [db_to_schema(t) for t in todos]
 
 @router.post("/api/todos", response_model=TodoItemSchema)
-def add_todo(todo: TodoItemSchema, db: Session = Depends(get_db)):
-    # 简单的用户 ID 占位符，实际应从 Auth 获取
-    default_user_id = "00000000-0000-0000-0000-000000000000" 
+def add_todo(todo: TodoItemSchema, http_request: Request, db: Session = Depends(get_db)):
+    # Extract user_id from token
+    user_id = "00000000-0000-0000-0000-000000000000"
+    auth_header = http_request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+        try:
+            payload = verify_token(token)
+            if payload and "user_id" in payload:
+                user_id = payload["user_id"]
+        except Exception:
+            pass
+            
+    # Check if this user_id exists in the database to prevent IntegrityError
+    from ..models import User
+    existing_user = db.query(User).filter(User.id == user_id).first()
     
+    if not existing_user:
+        # If the user doesn't exist (e.g. default placeholder or invalid token), try to find ANY user
+        # DEPRECATED: This caused isolation issues where tasks were assigned to random users (e.g. admin)
+        # We now strictly require a valid user_id or a valid default user.
+        # fallback_user = db.query(User).first()
+        # if fallback_user:
+        #     user_id = fallback_user.id
+        # else:
+        #     # If NO users exist at all, we can't insert due to foreign key constraint
+        #     # We must create a default user or fail
+        #     raise HTTPException(status_code=500, detail="No users found in database to attach todo item")
+        raise HTTPException(status_code=401, detail="Authentication required or invalid user")
+
     new_todo = Todo(
         id=str(uuid.uuid4()),
-        user_id=default_user_id,
+        user_id=user_id,
         title=todo.title,
         content=todo.content,
         type=todo.type,
@@ -94,9 +138,40 @@ def create_todo_internal(
     priority: str = "high", 
     category: str = "chat_record",
     due_date: Optional[str] = None,
-    assignee: Optional[str] = None
+    assignee: Optional[str] = None,
+    user_id: Optional[str] = None
 ):
-    default_user_id = "00000000-0000-0000-0000-000000000000"
+    from ..models import User
+    
+    final_user_id = None
+    
+    # 1. Try to use provided user_id if it exists in DB
+    if user_id:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user:
+            final_user_id = user.id
+            
+    # 2. If provided user_id was invalid or not provided, try default placeholder
+    if not final_user_id:
+        default_id = "00000000-0000-0000-0000-000000000000"
+        # Only use default if it actually exists in DB
+        user = db.query(User).filter(User.id == default_id).first()
+        if user:
+            final_user_id = user.id
+            
+    # 3. Fallback: use ANY valid user (e.g. for deployed envs without default user)
+    # DEPRECATED: This caused isolation issues where tasks were assigned to random users (e.g. admin)
+    # We now strictly require a valid user_id or a valid default user.
+    # if not final_user_id:
+    #     user = db.query(User).filter(User.is_deleted == False).first()
+    #     if user:
+    #         final_user_id = user.id
+    #         print(f"⚠️ create_todo_internal: Using fallback user {user.username} ({user.id})")
+            
+    # 4. If absolutely no users found, raise error
+    if not final_user_id:
+        raise Exception("No valid user found in database to assign todo item. Please ensure users exist in shjl_users table.")
+
     
     # Parse due_date if provided
     due_at_dt = None
@@ -125,7 +200,7 @@ def create_todo_internal(
 
     new_todo = Todo(
         id=str(uuid.uuid4()),
-        user_id=default_user_id,
+        user_id=final_user_id,
         title=title,
         content=formatted_content,
         type=category,
@@ -143,4 +218,6 @@ def create_todo_internal(
     db.refresh(new_todo)
     
     return db_to_schema(new_todo)
+
+
 

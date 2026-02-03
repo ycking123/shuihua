@@ -25,15 +25,15 @@ const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
       // Or use VITE_API_URL if defined
       // const baseUrl = import.meta.env.VITE_API_URL || ''; 
       
-      // Dynamic backend URL strategy to support both local dev and server deployment
+      // Dynamic backend URL strategy
       const getBackendUrl = () => {
-          const hostname = window.location.hostname;
-          if (hostname === 'localhost' || hostname === '127.0.0.1') {
-               // Local dev: use relative path to leverage Vite proxy
+          // Always use relative path (Vite proxy) in development mode (npm run dev)
+          // This works for both localhost and server (47.121.138.58:3000)
+          if (import.meta.env.DEV) {
                return ''; 
           }
-          // Server deployment: assume backend is on port 8000 of the same host
-          return `http://${hostname}:8000`;
+          // In production build, default to port 8000 on same host
+          return import.meta.env.VITE_API_URL || `http://${window.location.hostname}:8000`;
       };
       
       const baseUrl = getBackendUrl();
@@ -166,4 +166,5 @@ const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
 };
 
 export default LoginView;
+
 

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from zhipuai import ZhipuAI
@@ -11,6 +11,7 @@ import asyncio
 from datetime import datetime
 from sqlalchemy.orm import Session
 from ..database import get_db
+from ..security import verify_token
 # 引入同步的创建函数
 from .todos import create_todo_internal
 
@@ -22,7 +23,7 @@ class Message(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: list[Message]
-    model: str = "glm-4-flash"
+    model: str = "glm-4" # Updated default to standard glm-4 or glm-4-flash as requested
     use_rag: bool = False
 
 async def fetch_rag_context(query: str) -> str:
@@ -64,81 +65,45 @@ async def fetch_rag_context(query: str) -> str:
     return ""
 
 @router.post("/api/chat")
-async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
+async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session = Depends(get_db)):
     api_key = os.getenv("LOCAL_ZHIPU_APIKEY")
     if not api_key:
         raise HTTPException(status_code=500, detail="LOCAL_ZHIPU_APIKEY not configured")
+
+    # Extract user_id from token if available
+    user_id = "00000000-0000-0000-0000-000000000000"
+    auth_header = http_request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+        try:
+            payload = verify_token(token)
+            if payload and "user_id" in payload:
+                user_id = payload["user_id"]
+                print(f"👤 Chat Request from User ID: {user_id}")
+        except Exception as e:
+            print(f"⚠️ Token verification failed in chat: {e}")
 
     client = ZhipuAI(api_key=api_key)
     
     # 1. Intent Detection & Todo Extraction
     last_user_message = next((m.content for m in reversed(request.messages) if m.role == "user"), "")
     
-    current_time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    
-    # 使用 ai_handler.py 中的高质量 Prompt
-    system_prompt = """
-    你是一个智能企业微信待办事项提取助手，严格遵循以下要求提取信息并返回结果：
-    核心要求：
-    1.  任务标题：必须直白、具体、核心动作前置，一眼知晓要完成什么工作，拒绝空洞修饰（如「相关工作」「事项处理」），不整虚的；若未明确指定标题，提取消息前 50 个字符并优化为直白核心标题。
-    2.  必提信息：强制提取 DDL（截止时间）、责任人、任务详情，缺一不可。
-    3.  DDL 规则：文本中明确提及 DDL 则直接提取并统一格式为 YYYY-MM-DD HH:MM；无明确提及 DDL 时，默认填充「当天日期 18:00」，格式为 YYYY-MM-DD HH:MM。
-    4.  任务详情：完整提取任务的具体要求、执行内容、相关约束，不遗漏关键信息。
-    5.  责任人：文本中有明确责任人则直接提取；无明确责任人时，标记为「Sender（发送者）」。
-    6.  优先级：根据文本语气判断（高/中/低），紧急语气（如「尽快」「务必」「今日完成」）标记为高，默认优先级为中。
-
-    【重要】
-    1.  直接返回 JSON 格式，无任何额外解释、备注、换行符之外的冗余内容。
-    2.  JSON 结构严格遵循以下示例，字段不可增减、格式不可修改。
-    JSON 结构示例：
-    {
-      "summary": "待办事项汇总（简要概括所有任务核心）",
-      "task_list": [
-        {
-          "title": "撰写XX产品需求文档（V1.0版本）",
-          "description": "1. 结合用户反馈梳理产品核心功能；2. 绘制产品原型流程图；3. 标注功能优先级和实现难点",
-          "due_date": "2026-01-30 18:00",
-          "assignee": "Sender（发送者）",
-          "priority": "中"
-        }
-      ]
-    }
-    """
-    
-    # First, try to detect if it's a todo/intent request
-    # Use a simpler check or just apply the extraction model directly?
-    # Applying directly is safer as it can return empty task_list if no tasks found.
-    
     print(f"🤖 Analyzing intent for: {last_user_message[:50]}...")
     
     try:
-        intent_response = client.chat.completions.create(
-            model="glm-4-flash", # Use flash for speed
-            messages=[
-                {"role": "system", "content": f"{system_prompt}\n\n【当前系统时间】：{current_time_str}"},
-                {"role": "user", "content": last_user_message}
-            ],
-            stream=False,
-            temperature=0.1
-        )
-        
-        intent_content = intent_response.choices[0].message.content
-        # Clean up code blocks if present
-        if intent_content.startswith("```json"):
-            intent_content = intent_content[7:]
-        if intent_content.startswith("```"):
-            intent_content = intent_content[3:]
-        if intent_content.endswith("```"):
-            intent_content = intent_content[:-3]
-            
-        # Try to parse JSON
-        intent_data = None
+        # Use shared function from server/services/ai_service.py
         try:
-            match = re.search(r'\{.*\}', intent_content, re.DOTALL)
-            if match:
-                intent_data = json.loads(match.group())
-        except:
-            pass
+            from ..services.ai_service import extract_todos_from_text
+        except ImportError:
+            # Fallback if relative import fails (e.g. running script directly)
+            import sys
+            from pathlib import Path
+            root_path = str(Path(__file__).resolve().parent.parent.parent)
+            if root_path not in sys.path:
+                sys.path.append(root_path)
+            from server.services.ai_service import extract_todos_from_text
+
+        intent_data = extract_todos_from_text(last_user_message)
             
         # If valid todo data found
         if intent_data and intent_data.get("task_list"):
@@ -164,7 +129,8 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
                     priority, 
                     "chat_record",
                     due_date,
-                    assignee
+                    assignee,
+                    user_id=user_id # Pass the authenticated user_id
                 )
                 created_tasks.append(f"- **{title}** (责任人: {assignee}, 截止: {due_date})")
             
@@ -181,47 +147,51 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
             return StreamingResponse(generate_confirmation(), media_type="text/event-stream")
 
     except Exception as e:
-        print(f"Intent detection/Creation failed: {e}")
+        import traceback
+        print(f"❌ Intent detection/Creation failed: {e}")
+        traceback.print_exc()
+
+        traceback.print_exc()
         # Fallback to normal chat
-
-    # 4. Normal Chat Flow (Fallthrough)
-    rag_context = ""
-    if request.use_rag:
-        query_msg = next((m.content for m in reversed(request.messages) if m.role == "user"), "")
-        if query_msg:
-            print(f"🔍 Fetching RAG context for: {query_msg}")
-            rag_context = await fetch_rag_context(query_msg)
-
-    system_instruction = """
-    你是一个战略智僚助手。请以专业、简洁、有深度的风格直接回答用户的问题。
-    """
-
-    if rag_context:
-        system_instruction += f"\n\n【参考知识库信息】\n{rag_context}\n\n请结合以上参考信息回答用户的问题。如果参考信息与问题不相关，请忽略它。"
-
-    messages_payload = [
-        {"role": "system", "content": system_instruction}
-    ]
-    for msg in request.messages:
-        role = "assistant" if msg.role == "model" else msg.role
-        messages_payload.append({"role": role, "content": msg.content})
-
+    
     try:
+        # 4. Normal Chat Flow (Fallthrough)
+        rag_context = ""
+        if request.use_rag:
+            query_msg = next((m.content for m in reversed(request.messages) if m.role == "user"), "")
+            if query_msg:
+                print(f"🔍 Fetching RAG context for: {query_msg}")
+                rag_context = await fetch_rag_context(query_msg)
+
+        system_instruction = """
+        你是一个战略智僚助手。请以专业、简洁、有深度的风格直接回答用户的问题。
+        """
+
+        if rag_context:
+            system_instruction += f"\n\n【参考知识库信息】\n{rag_context}\n\n请结合以上参考信息回答用户的问题。如果参考信息与问题不相关，请忽略它。"
+
         response = client.chat.completions.create(
             model=request.model,
-            messages=messages_payload,
-            stream=True
+            messages=[
+                {"role": "system", "content": system_instruction},
+                *([{"role": m.role, "content": m.content} for m in request.messages])
+            ],
+            stream=True,
         )
 
-        def generate():
+        async def generate():
             for chunk in response:
-                if chunk.choices and chunk.choices[0].delta.content:
+                if chunk.choices[0].delta.content:
                     yield f"data: {json.dumps({'content': chunk.choices[0].delta.content})}\n\n"
+                    await asyncio.sleep(0.005)
             yield "data: [DONE]\n\n"
 
         return StreamingResponse(generate(), media_type="text/event-stream")
-            
+    
     except Exception as e:
-        print(f"Error calling ZhipuAI: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        print(f"❌ Chat generation failed: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+
 

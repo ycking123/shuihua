@@ -47,19 +47,27 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
     try {
       // Determine backend URL based on environment
       const getBackendUrl = () => {
-          const hostname = window.location.hostname;
-          // If local development, connect to the specified Aliyun server
-          if (hostname === 'localhost' || hostname === '127.0.0.1') {
-               return 'http://47.121.138.58:8000/api/chat';
+          // Use Vite proxy in development mode
+          if (import.meta.env.DEV) {
+               return '/api/chat';
           }
           // Otherwise use the same hostname as the frontend
-          return `http://${hostname}:8000/api/chat`;
+          return `http://${window.location.hostname}:8000/api/chat`;
       };
 
       const backendUrl = getBackendUrl();
+      const token = localStorage.getItem('token');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch(backendUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: headers,
           body: JSON.stringify({ 
             messages: [...messages.map(m => ({ role: m.type === 'user' ? 'user' : 'assistant', content: m.content })), { role: 'user', content }],
             use_rag: isRagEnabled
@@ -224,5 +232,6 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
 };
 
 export default ChatView;
+
 
 

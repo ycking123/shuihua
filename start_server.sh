@@ -65,8 +65,9 @@ echo "$FRONT_PID" > "$LOG_DIR/frontend.pid"
 echo "=================================================="
 echo "All services started successfully in background!"
 echo "Main Backend:   http://localhost:8000"
-echo "Frontend:       http://localhost:5173"
+echo "Frontend:       http://localhost:3000"
 echo "You can close this terminal session now."
 echo "To stop services, run: ./stop_server.sh"
 echo "=================================================="
+
 

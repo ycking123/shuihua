@@ -61,14 +61,23 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
       try {
         // Use hostname to adapt to both local and server environments
         const hostname = window.location.hostname;
-        let backendUrl = `http://${hostname}:8000/api/todos`;
+        let backendUrl = `http://${window.location.hostname}:8000/api/todos`;
         
-        // If local development, connect to the specified Aliyun server
-        if (hostname === 'localhost' || hostname === '127.0.0.1') {
-             backendUrl = 'http://47.121.138.58:8000/api/todos';
+        // If local development (npm run dev), use proxy
+        if (import.meta.env.DEV) {
+             backendUrl = '/api/todos';
         }
 
-        const res = await fetch(backendUrl);
+        // Add Authorization header if token exists
+        const token = localStorage.getItem('token');
+        const headers: HeadersInit = {
+            'Content-Type': 'application/json'
+        };
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        const res = await fetch(backendUrl, { headers });
         if (res.ok) {
           const data = await res.json();
           setBackendTasks(data);
@@ -389,5 +398,6 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
 };
 
 export default TodoView;
+
 
 

@@ -6,20 +6,28 @@ from dotenv import load_dotenv
 import os
 from contextlib import asynccontextmanager
 
-# Load environment variables from .env.local in root
+# Load environment variables from .env in root
 BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(dotenv_path=BASE_DIR / ".env.local")
+load_dotenv(dotenv_path=BASE_DIR / ".env")
 
 # Import routers
 # Using relative imports as we are running as a module (python -m server.main)
 from .routers import asr, chat, todos, auth
-from .database import engine, Base
+from .database import engine, Base, init_db
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Create tables if not exist (optional, better to use Alembic migrations)
-    # async with engine.begin() as conn:
-    #     await conn.run_sync(Base.metadata.create_all)
+    # Startup: Create tables if not exist
+    try:
+        print("Initializing database...")
+        init_db() # Ensure DB exists
+        print("Initializing database tables...")
+        Base.metadata.create_all(bind=engine)
+        print("Database tables created successfully (if they didn't exist).")
+    except Exception as e:
+        print(f"Error creating database tables: {e}")
+        # We don't raise here to allow server to start, but DB ops will likely fail
+    
     print("Database connection initialized")
     yield
     # Shutdown
@@ -60,4 +68,5 @@ def read_root():
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 

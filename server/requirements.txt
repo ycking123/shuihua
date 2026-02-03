@@ -10,7 +10,8 @@ google-generativeai
 sqlalchemy
 pymysql
 mysql-connector-python
-python-jose[cryptography]
-passlib[bcrypt]
+python-jose
+passlib
 python-multipart
+
 
