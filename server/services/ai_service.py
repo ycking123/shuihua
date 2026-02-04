@@ -18,50 +18,98 @@ if not ZHIPU_API_KEY:
 
 client = ZhipuAI(api_key=ZHIPU_API_KEY)
 
-def extract_todos_from_text(text_content):
+def extract_todos_from_text(text_content, context_messages=None):
     """
-    从文本中提取待办事项
+    从文本和上下文中提取待办事项，支持缺省参数追问
     """
     if not text_content:
         return None
 
+    # 构建上下文对话字符串供 LLM 参考
+    context_str = ""
+    if context_messages:
+        # 取最近 5 条记录作为上下文
+        recent_msgs = context_messages[-5:] 
+        for msg in recent_msgs:
+            role_name = "User" if msg.get("role") == "user" else "Assistant"
+            content = msg.get("content", "")
+            context_str += f"{role_name}: {content}\n"
+    
     system_prompt = """
-    你是一个智能企业微信待办事项提取助手，严格遵循以下要求提取信息并返回结果：
-    核心要求：
-    1.  任务标题：必须直白、具体、核心动作前置，一眼知晓要完成什么工作，拒绝空洞修饰（如「相关工作」「事项处理」），不整虚的；若未明确指定标题，提取消息前 50 个字符并优化为直白核心标题。
-    2.  必提信息：强制提取 DDL（截止时间）、责任人、任务详情，缺一不可。
-    3.  DDL 规则：文本中明确提及 DDL 则直接提取并统一格式为 YYYY-MM-DD HH:MM；无明确提及 DDL 时，默认填充「当天日期 18:00」，格式为 YYYY-MM-DD HH:MM。
-    4.  任务详情：完整提取任务的具体要求、执行内容、相关约束，不遗漏关键信息。
-    5.  责任人：文本中有明确责任人则直接提取；无明确责任人时，标记为「Sender（发送者）」。
-    6.  优先级：根据文本语气判断（高/中/低），紧急语气（如「尽快」「务必」「今日完成」）标记为高，默认优先级为中。
+    你是一个智能企业助手。你的任务分两步：
+    1. **意图判断**：判断用户是否想要创建待办、会议、提醒或日程。
+    2. **待办提取**：如果是，则严格收集信息；如果不是，直接返回非待办标记。
 
-    【重要】
-    1.  直接返回 JSON 格式，无任何额外解释、备注、换行符之外的冗余内容。
-    2.  JSON 结构严格遵循以下示例，字段不可增减、格式不可修改。
-    JSON 结构示例：
+    【第一步：意图判断（优先级最高）】
+    - 如果用户的输入只是日常闲聊（如“你好”、“吃了吗”）、普通问答（如“介绍下公司”、“写首诗”）、或者与创建任务无关的内容：
+      **直接返回**：{"is_todo": false}
+    - 只有当用户明确表达了“安排”、“提醒”、“开会”、“要做...”等创建意图，或者正在回复之前的任务追问时，才进入第二步。
+
+    【第二步：严格待办提取（仅当意图为创建任务时执行）】
+    你的目标是：**收集完整的信息以创建任务，绝不通过猜测来补充缺失信息。**
+
+    任何任务（Task/Meeting）必须**同时具备**以下 4 个要素才能创建，缺一不可：
+    1. **主题 (title)**: 做什么？（例如：系统部署、周会）。
+    2. **具体时间 (due_date)**: 什么时候？必须精确到“点”（例如：明天上午9点）。仅说“明天”是不够的，视为缺失。
+    3. **责任人/参会人 (assignee)**: 谁？必须明确指定人名（例如：小张、王总）或明确说“我”。**如果没有提到人名，绝对视为缺失！禁止默认设为“我”！**
+    4. **优先级 (priority)**: 紧急程度。必须明确提及（紧急/重要/一般/低）。如果不说，视为缺失。
+
+    【工作流程 - 严格执行】
+    1. **合并信息**：阅读【对话上下文】和【当前输入】，将所有已知信息填入“信息槽”。
+    2. **完整性检查**：
+       - 检查 title 是否存在？
+       - 检查 due_date 是否精确到分钟/小时？
+       - 检查 assignee 是否明确提及？
+       - 检查 priority 是否明确提及？
+    3. **决策输出**：
+       - **只要有任何一项缺失**：
+         - status = "clarification_needed"
+         - missing_fields = [所有缺失的字段列表]
+         - clarification_question = "收到[已有的信息]。请补充[缺失字段1]、[缺失字段2]..." (一次性问完！)
+       - **只有当 4 项全部确切存在**：
+         - status = "completed"
+         - 生成 task_list
+
+    【JSON输出结构】
+    
+    场景 A：非任务
+    User: 你好
+    { "is_todo": false }
+
+    场景 B：任务信息不全
+    User: 明天开会
     {
-      "summary": "待办事项汇总（简要概括所有任务核心）",
-      "task_list": [
-        {
-          "title": "撰写XX产品需求文档（V1.0版本）",
-          "description": "1. 结合用户反馈梳理产品核心功能；2. 绘制产品原型流程图；3. 标注功能优先级和实现难点",
-          "due_date": "2026-01-30 18:00",
-          "assignee": "Sender（发送者）",
-          "priority": "中"
-        }
-      ]
+      "is_todo": true,
+      "status": "clarification_needed",
+      "missing_fields": ["title", "due_date", "assignee", "priority"],
+      "clarification_question": "..."
+    }
+
+    场景 C：任务信息齐全
+    User: ... (4要素齐备)
+    {
+      "is_todo": true,
+      "status": "completed",
+      "task_list": [ ... ]
     }
     """
     
     current_time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
+    # 构建最终的 prompt messages
+    messages_payload = [
+        {"role": "system", "content": f"{system_prompt}\n\n【当前系统时间】：{current_time_str}"}
+    ]
+    
+    if context_str:
+        messages_payload.append({"role": "system", "content": f"【对话上下文参考】：\n{context_str}"})
+        
+    messages_payload.append({"role": "user", "content": text_content})
+
     try:
         response = client.chat.completions.create(
             model="glm-4",
-            messages=[
-                {"role": "system", "content": f"{system_prompt}\n\n【当前系统时间】：{current_time_str}"},
-                {"role": "user", "content": text_content}
-            ],
+            messages=messages_payload,
             temperature=0.1,
         )
         

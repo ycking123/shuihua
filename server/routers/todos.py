@@ -147,9 +147,14 @@ def create_todo_internal(
     
     # 1. Try to use provided user_id if it exists in DB
     if user_id:
-        user = db.query(User).filter(User.id == user_id).first()
-        if user:
-            final_user_id = user.id
+        # Check if it's a valid UUID first to avoid DB errors
+        try:
+            uuid.UUID(user_id)
+            user = db.query(User).filter(User.id == user_id).first()
+            if user:
+                final_user_id = user.id
+        except ValueError:
+             print(f"⚠️ create_todo_internal: Invalid UUID provided: {user_id}")
             
     # 2. If provided user_id was invalid or not provided, try default placeholder
     if not final_user_id:
@@ -170,7 +175,8 @@ def create_todo_internal(
             
     # 4. If absolutely no users found, raise error
     if not final_user_id:
-        raise Exception("No valid user found in database to assign todo item. Please ensure users exist in shjl_users table.")
+        print(f"❌ create_todo_internal: Failed to find valid user. Provided: {user_id}")
+        raise Exception("无法创建任务：未找到有效的用户关联。请尝试重新登录。")
 
     
     # Parse due_date if provided
@@ -188,8 +194,16 @@ def create_todo_internal(
 
     # Format content to include details
     formatted_content = summary
+    
+    # Handle list type for assignee (convert to string)
+    assignee_str = ""
     if assignee:
-        formatted_content += f"\n责任人: {assignee}"
+        if isinstance(assignee, list):
+            assignee_str = ", ".join(assignee)
+        else:
+            assignee_str = str(assignee)
+        formatted_content += f"\n责任人: {assignee_str}"
+        
     if due_date:
         formatted_content += f"\n截止时间: {due_date}"
 
@@ -206,7 +220,7 @@ def create_todo_internal(
         type=category,
         priority=priority,
         status="pending",
-        sender=assignee if assignee else "AI智僚",
+        sender=assignee_str if assignee_str else "AI智僚",
         ai_summary=formatted_ai_summary,
         due_at=due_at_dt,
         created_at=datetime.now(),

@@ -3,7 +3,7 @@ import { Send, Brain, Database } from 'lucide-react';
 import OntologySphere from './OntologySphere';
 
 interface Message {
-  id: number;
+  id: string | number;
   type: 'agent' | 'user';
   content: string;
 }
@@ -21,6 +21,43 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking]);
+
+  // Load history on mount
+  useEffect(() => {
+    const fetchHistory = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            if (!token) return;
+
+            const getBackendUrl = () => {
+                if (import.meta.env.DEV) return '/api/chat/history';
+                return `http://${window.location.hostname}:8000/api/chat/history`;
+            };
+
+            const res = await fetch(getBackendUrl(), {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            if (res.ok) {
+                 const data = await res.json();
+                 const historyMsgs: Message[] = data.map((m: any) => ({
+                     id: m.id, 
+                     type: m.role === 'user' ? 'user' : 'agent',
+                     content: m.content
+                 }));
+                 
+                 setMessages(prev => {
+                     const existingIds = new Set(prev.map(p => p.id));
+                     const newMsgs = historyMsgs.filter(h => !existingIds.has(h.id));
+                     return [...newMsgs, ...prev];
+                 });
+             }
+        } catch (e) {
+            console.error("Fetch history failed", e);
+        }
+    };
+    fetchHistory();
+  }, []);
 
   useEffect(() => {
     if (initialContext) {
