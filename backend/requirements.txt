@@ -4,4 +4,7 @@ python-dotenv
 pydantic
 openai
 websockets
-httpx
+sqlalchemy
+pymysql
+
+

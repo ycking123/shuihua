@@ -4,6 +4,7 @@ import json
 import base64
 import time
 import httpx
+import fitz  # PyMuPDF
 from typing import List, Optional
 from datetime import datetime
 from pathlib import Path
@@ -26,6 +27,8 @@ except ImportError:
 
 # --- Internal Imports ---
 from backend.ai_handler import analyze_chat_screenshot_with_glm4v, parse_ai_result_to_todos, analyze_text_message, analyze_intent, extract_meeting_info
+from backend.url_crawler import extract_meeting_url
+from backend.crawl_with_browser import crawl_meeting_minutes
 
 try:
     from pypinyin import lazy_pinyin
@@ -64,6 +67,8 @@ WECOM_TOKEN = os.getenv("WECOM_TOKEN")
 WECOM_AES_KEY = os.getenv("WECOM_AES_KEY")
 WECOM_CORP_ID = os.getenv("WECOM_CORP_ID")
 WECOM_SECRET = os.getenv("WECOM_SECRET")
+# 爬虫 Cookies
+WECOM_MEETING_COOKIES = os.getenv("WECOM_MEETING_COOKIES")
 
 if not all([WECOM_TOKEN, WECOM_AES_KEY, WECOM_CORP_ID]):
     logger.error("❌ 缺少必要的企业微信配置 (WECOM_TOKEN, WECOM_AES_KEY, WECOM_CORP_ID)，请检查 .env 文件")
@@ -148,6 +153,32 @@ class TodoItem(BaseModel):
 
 # --- Global Storage ---
 todos_store: List[TodoItem] = []
+DB_FILE = Path(__file__).parent.parent / "data" / "todos.json"
+
+def save_todos():
+    """持久化待办事项到 JSON 文件"""
+    try:
+        DB_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(DB_FILE, "w", encoding="utf-8") as f:
+            json.dump([item.dict() for item in todos_store], f, ensure_ascii=False, indent=2)
+        logger.info(f"💾 已保存 {len(todos_store)} 条数据到 {DB_FILE}")
+    except Exception as e:
+        logger.error(f"❌ 保存数据库失败: {e}")
+
+def load_todos():
+    """从 JSON 文件加载待办事项"""
+    global todos_store
+    if DB_FILE.exists():
+        try:
+            with open(DB_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                todos_store = [TodoItem(**item) for item in data]
+            logger.info(f"📂 已加载 {len(todos_store)} 条数据")
+        except Exception as e:
+            logger.error(f"❌ 加载数据库失败: {e}")
+
+# 初始化加载
+load_todos()
 
 def sync_todo_to_main_server(todo_item: TodoItem):
     """
@@ -167,7 +198,154 @@ def sync_todo_to_main_server(todo_item: TodoItem):
         logger.error(f"❌ 同步待办到主服务器异常: {e}")
 
 
+import uuid
+from server.database import SessionLocal
+from server.models import Todo, Meeting, User
+
 # --- Helper Functions ---
+def clean_text(text):
+    """Remove 4-byte characters (emojis) for MySQL utf8 compatibility"""
+    if not text: return ""
+    return "".join(c for c in text if len(c.encode('utf-8')) <= 3)
+
+def save_meeting_data_to_db(crawl_result, user_wecom_id):
+    """
+    Save crawled meeting data to database directly.
+    """
+    db = SessionLocal()
+    try:
+        # 1. Find User
+        # msg.source is usually WeCom UserID.
+        # Try to find user by wecom_userid
+        user = None
+        if user_wecom_id:
+            user = db.query(User).filter(User.wecom_userid == user_wecom_id).first()
+        
+        # Fallback: try to match by username if wecom_userid not set or match failed
+        if not user and user_wecom_id:
+             user = db.query(User).filter(User.username == user_wecom_id).first()
+        
+        # Absolute fallback: use the first user found (system owner?)
+        if not user:
+            user = db.query(User).first()
+            logger.warning(f"⚠️ save_meeting_data_to_db: User {user_wecom_id} not found, associating with default user {user.username if user else 'None'}")
+        
+        if user:
+            user_id = user.id
+        else:
+            # Create default user if no users exist to avoid FK error
+            default_user_id = "00000000-0000-0000-0000-000000000000"
+            user = User(
+                id=default_user_id,
+                username="system_default",
+                password_hash="invalid",
+                full_name="System Default",
+                is_active=True
+            )
+            db.add(user)
+            db.commit() # Commit immediately to persist user
+            user_id = default_user_id
+            logger.info(f"✅ Created default user {user_id}")
+
+        # 2. Save Meeting Record
+        new_meeting = Meeting(
+            id=str(uuid.uuid4()),
+            organizer_id=user_id,
+            title=clean_text(crawl_result.get("title", "会议纪要")),
+            start_time=datetime.now(),
+            end_time=datetime.now(),
+            location="腾讯会议",
+            summary=clean_text(crawl_result.get("summary", "")),
+            transcript=clean_text(crawl_result.get("transcript", "")),
+            created_at=datetime.now(),
+            updated_at=datetime.now()
+        )
+        db.add(new_meeting)
+        
+        # 3. Save Todos
+        extracted_todos = crawl_result.get("todos", [])
+        # Parse if string
+        if isinstance(extracted_todos, str):
+            try:
+                parsed = json.loads(extracted_todos)
+                if isinstance(parsed, dict):
+                    extracted_todos = parsed.get("task_list", [])
+                elif isinstance(parsed, list):
+                    extracted_todos = parsed
+            except:
+                extracted_todos = []
+        
+        count = 0
+        if extracted_todos and isinstance(extracted_todos, list):
+            for t in extracted_todos:
+                # Handle if t is just a string
+                if isinstance(t, str):
+                    t = {
+                        "title": t,
+                        "description": t,
+                        "priority": "medium",
+                        "assignee": "待定"
+                    }
+                
+                # Map priority to allowed values
+                raw_priority = t.get("priority", "normal").lower()
+                if "high" in raw_priority or "urgent" in raw_priority:
+                    safe_priority = "high"
+                elif "low" in raw_priority:
+                    safe_priority = "low"
+                else:
+                    safe_priority = "normal"
+
+                new_todo = Todo(
+                    id=str(uuid.uuid4()),
+                    user_id=user_id,
+                    title=clean_text(t.get("title", "未命名任务")[:255]),
+                    content=clean_text(f"详情: {t.get('description', '')}\n责任人: {t.get('assignee', '')}"),
+                    type="task",
+                    priority=safe_priority,
+                    status="pending",
+                    sender="会议纪要助手",
+                    ai_summary=f"截止: {t.get('due_date', '无')}",
+                    source_origin="meeting_minutes",
+                    source_message_id=new_meeting.id, # Link to meeting
+                    created_at=datetime.now(),
+                    updated_at=datetime.now()
+                )
+                db.add(new_todo)
+                count += 1
+                
+        # 4. Save Meeting Record Todo
+        meeting_todo = Todo(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            title=clean_text(f"【会议】{new_meeting.title}"),
+            content=clean_text(f"【会议纪要】\n{new_meeting.summary[:500]}...\n\n已提取待办: {count}条"),
+            type="meeting",
+            priority="high",
+            status="completed", # It's a record
+            sender="会议助手",
+            source_origin="meeting_minutes",
+            source_message_id=new_meeting.id,
+            created_at=datetime.now(),
+            updated_at=datetime.now()
+        )
+        db.add(meeting_todo)
+        
+        db.commit()
+        logger.info(f"✅ [DB] 已保存会议纪要及 {count} 条待办到数据库")
+        return count
+        
+    except Exception as e:
+        db.rollback()
+        import traceback
+        with open("db_error_log.txt", "w", encoding="utf-8") as f:
+            f.write(f"Error: {e}\n")
+            traceback.print_exc(file=f)
+        logger.error(f"❌ [DB] 保存会议数据失败: {e}")
+        return 0
+    finally:
+        db.close()
+
 def convert_name_to_userid(name: str) -> str:
     """
     尝试将中文姓名转换为 UserID
@@ -313,6 +491,26 @@ def process_text_sync(text_content: str, user_id: str = None):
     """
     logger.info(f"📝 开始后台处理文本消息 from User: {user_id}")
     try:
+        # 0. 优先检查是否包含会议链接
+        meeting_url = extract_meeting_url(text_content)
+        if meeting_url:
+            logger.info(f"🔗 检测到会议链接: {meeting_url}")
+            if not WECOM_MEETING_COOKIES:
+                logger.warning("⚠️ 未配置 WECOM_MEETING_COOKIES，爬虫可能无法访问受限内容")
+            
+            # 启动爬虫
+            crawl_result = crawl_meeting_minutes(meeting_url, WECOM_MEETING_COOKIES)
+            
+            if crawl_result:
+                # 直接存入数据库，不通过前端API传输
+                saved_count = save_meeting_data_to_db(crawl_result, user_id)
+                logger.info(f"✅ 会议链接处理完成，已存入数据库 (待办数: {saved_count})")
+                return # 结束处理
+            else:
+                logger.warning("⚠️ 爬虫未返回有效结果")
+                # 如果爬取失败，继续走下面的逻辑吗？或者直接返回？
+                # 暂时选择继续，可能用户只是发了个坏链接，但想表达其他意思
+        
         # 1. Analyze Intent
         intent = analyze_intent(text_content)
         logger.info(f"🧠 意图识别结果: {intent}")
@@ -389,6 +587,67 @@ def process_text_sync(text_content: str, user_id: str = None):
 
     except Exception as e:
         logger.error(f"❌ 文本处理流程异常: {e}")
+
+def process_file_sync(media_id: str, file_name: str, file_ext: str, user_id: str):
+    """
+    Synchronous function to process file message
+    """
+    logger.info(f"📂 开始后台处理文件消息 from User: {user_id}, File: {file_name}")
+    try:
+        if not wechat_client:
+            logger.error("❌ WeChatClient 未初始化，无法下载文件")
+            return
+
+        # 1. 下载文件
+        logger.info(f"⬇️ 正在下载文件 media_id: {media_id}...")
+        res = wechat_client.media.download(media_id)
+        
+        # res.content contains the file bytes
+        file_content = res.content
+        file_size = len(file_content)
+        logger.info(f"✅ 文件下载成功，大小: {file_size} bytes")
+
+        # 2. 提取文本
+        extracted_text = ""
+        
+        if file_ext.lower() == 'txt':
+            try:
+                extracted_text = file_content.decode('utf-8')
+            except UnicodeDecodeError:
+                try:
+                    extracted_text = file_content.decode('gbk')
+                except Exception:
+                    logger.error("❌ TXT 文件编码识别失败")
+                    return
+                    
+        elif file_ext.lower() == 'pdf':
+            try:
+                with fitz.open(stream=file_content, filetype="pdf") as doc:
+                    for page in doc:
+                        extracted_text += page.get_text()
+            except Exception as e:
+                logger.error(f"❌ PDF 解析失败: {e}")
+                return
+        
+        else:
+            logger.warning(f"⚠️ 暂不支持的文件格式: {file_ext}")
+            # 可以考虑添加 TODO 提醒用户
+            return
+
+        if not extracted_text.strip():
+            logger.warning("⚠️ 文件提取内容为空")
+            return
+
+        logger.info(f"📄 文件内容提取成功，长度: {len(extracted_text)} 字符")
+        
+        # 3. 复用文本处理逻辑
+        # 我们可以给文本加个前缀说明来源
+        context_text = f"【文件内容分析：{file_name}】\n{extracted_text}"
+        process_text_sync(context_text, user_id)
+
+    except Exception as e:
+        logger.error(f"❌ 文件处理流程异常: {e}")
+
 
 # --- API Routes ---
 
@@ -470,6 +729,10 @@ async def wechat_receive(
             # 启动后台任务处理图片
             background_tasks.add_task(process_image_sync, msg.media_id, msg.source)
             reply = create_reply("正在分析图片内容生成待办事项，请稍候...", msg).render()
+        elif msg.type == 'file':
+            # 启动后台任务处理文件
+            background_tasks.add_task(process_file_sync, msg.media_id, msg.filename, msg.ext, msg.source)
+            reply = create_reply(f"已收到文件【{msg.filename}】，正在提取内容分析...", msg).render()
         else:
             reply = create_reply("暂不支持该消息类型", msg).render()
             

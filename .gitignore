@@ -32,4 +32,4 @@ __pycache__/
 *.py[cod]
 
 # Test files
-test_image.jpg
+# test_image.jpg

@@ -284,29 +284,6 @@ def extract_todos_from_text(text_content):
         print(f"❌ 文本待办提取失败: {e}")
         return None
 
-        match = re.search(r'\{.*\}', content, re.DOTALL)
-        if match:
-            info = json.loads(match.group())
-            # Convert time string to timestamp
-            try:
-                if "start_time" in info and isinstance(info["start_time"], str):
-                    dt = datetime.strptime(info["start_time"], "%Y-%m-%d %H:%M")
-                    info["start_time"] = int(dt.timestamp())
-            except Exception as e:
-                print(f"⚠️ 时间转换失败: {e}, 使用默认时间")
-                info["start_time"] = int(time.time() + 1800)
-            return info
-    except Exception as e:
-        print(f"❌ 会议信息提取失败: {e}")
-    
-    # Fallback default
-    return {
-        "topic": "临时讨论",
-        "start_time": int(time.time() + 1800),
-        "duration": 3600,
-        "attendees": []
-    }
-
 def analyze_text_message(text_content):
     """
     分析纯文本消息，提取待办事项

@@ -48,11 +48,12 @@ def extract_todos_from_text(text_content, context_messages=None):
     【第二步：严格待办提取（仅当意图为创建任务时执行）】
     你的目标是：**收集完整的信息以创建任务，绝不通过猜测来补充缺失信息。**
 
-    任何任务（Task/Meeting）必须**同时具备**以下 4 个要素才能创建，缺一不可：
+    任何任务（Task/Meeting）必须**同时具备**以下 5 个要素才能创建，缺一不可：
     1. **主题 (title)**: 做什么？（例如：系统部署、周会）。
     2. **具体时间 (due_date)**: 什么时候？必须精确到“点”（例如：明天上午9点）。仅说“明天”是不够的，视为缺失。
     3. **责任人/参会人 (assignee)**: 谁？必须明确指定人名（例如：小张、王总）或明确说“我”。**如果没有提到人名，绝对视为缺失！禁止默认设为“我”！**
     4. **优先级 (priority)**: 紧急程度。必须明确提及（紧急/重要/一般/低）。如果不说，视为缺失。
+    5. **类型 (type)**: 任务类型。必须是以下之一：task (普通任务), meeting (会议), chat_record (聊天记录), email (邮件), approval (审批)。如果不确定，默认为 task。
 
     【工作流程 - 严格执行】
     1. **合并信息**：阅读【对话上下文】和【当前输入】，将所有已知信息填入“信息槽”。
@@ -62,13 +63,13 @@ def extract_todos_from_text(text_content, context_messages=None):
        - 检查 assignee 是否明确提及？
        - 检查 priority 是否明确提及？
     3. **决策输出**：
-       - **只要有任何一项缺失**：
+       - **只要有任何一项缺失**（type 默认为 task，不算缺失）：
          - status = "clarification_needed"
          - missing_fields = [所有缺失的字段列表]
          - clarification_question = "收到[已有的信息]。请补充[缺失字段1]、[缺失字段2]..." (一次性问完！)
-       - **只有当 4 项全部确切存在**：
+       - **只有当 4 项核心要素（title, due_date, assignee, priority）全部确切存在**：
          - status = "completed"
-         - 生成 task_list
+         - 生成 task_list (包含 type)
 
     【JSON输出结构】
     
@@ -90,7 +91,16 @@ def extract_todos_from_text(text_content, context_messages=None):
     {
       "is_todo": true,
       "status": "completed",
-      "task_list": [ ... ]
+      "task_list": [
+          {
+              "title": "...",
+              "description": "...",
+              "due_date": "...",
+              "assignee": "...",
+              "priority": "...",
+              "type": "meeting" 
+          }
+      ]
     }
     """
     
@@ -108,7 +118,7 @@ def extract_todos_from_text(text_content, context_messages=None):
 
     try:
         response = client.chat.completions.create(
-            model="glm-4",
+            model="glm-4-flash",
             messages=messages_payload,
             temperature=0.1,
         )

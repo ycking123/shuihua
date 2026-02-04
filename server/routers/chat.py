@@ -24,7 +24,7 @@ class Message(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: list[Message]
-    model: str = "glm-4"
+    model: str = "glm-4-flash"
     use_rag: bool = False
 
 async def fetch_rag_context(query: str) -> str:
@@ -131,9 +131,13 @@ def get_chat_history(http_request: Request, db: Session = Depends(get_db)):
 
 @router.post("/api/chat")
 async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session = Depends(get_db)):
-    api_key = os.getenv("LOCAL_ZHIPU_APIKEY")
+    api_key = os.getenv("ZHIPUAI_API_KEY")
     if not api_key:
-        raise HTTPException(status_code=500, detail="LOCAL_ZHIPU_APIKEY not configured")
+        # Try fallback
+        api_key = os.getenv("LOCAL_ZHIPU_APIKEY")
+    
+    if not api_key:
+        raise HTTPException(status_code=500, detail="ZHIPUAI_API_KEY not configured")
 
     # Extract user_id from token if available
     user_id = "00000000-0000-0000-0000-000000000000"
@@ -227,6 +231,7 @@ async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session
                          
                     due_date = t.get('due_date')
                     assignee = t.get('assignee')
+                    task_type = t.get('type', 'task')
                     
                     # Create in DB
                     new_todo = create_todo_internal(
@@ -234,7 +239,7 @@ async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session
                         title, 
                         description, # Use description as summary/content
                         priority, 
-                        "chat_record",
+                        task_type,
                         due_date,
                         assignee,
                         user_id=user_id # Pass the authenticated user_id
