@@ -8,11 +8,19 @@ interface Message {
   content: string;
 }
 
+interface Model {
+  id: string;
+  name: string;
+  provider: string;
+}
+
 const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () => void }> = ({ initialContext, onClearContext }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');    
   const [isThinking, setIsThinking] = useState(false); 
   const [isRagEnabled, setIsRagEnabled] = useState(false);
+  const [models, setModels] = useState<Model[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>('glm-4-flash');
   const [sphereStatus, setSphereStatus] = useState<'idle' | 'thinking' | 'working'>('idle');
   const messagesEndRef = useRef<HTMLDivElement>(null); 
 
@@ -21,6 +29,33 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking]);
+
+  // Load models on mount
+  useEffect(() => {
+      const fetchModels = async () => {
+          try {
+              const getBackendUrl = () => {
+                  if (import.meta.env.DEV) return '/api/chat/models';
+                  return `http://${window.location.hostname}:8000/api/chat/models`;
+              };
+              const res = await fetch(getBackendUrl());
+              if (res.ok) {
+                  const data = await res.json();
+                  setModels(data);
+                  if (data.length > 0) {
+                      // Keep default if exists, else take first
+                      const hasDefault = data.find((m: Model) => m.id === 'glm-4-flash');
+                      if (!hasDefault) {
+                          setSelectedModel(data[0].id);
+                      }
+                  }
+              }
+          } catch (e) {
+              console.error("Fetch models failed", e);
+          }
+      };
+      fetchModels();
+  }, []);
 
   // Load history on mount
   useEffect(() => {
@@ -107,7 +142,8 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
           headers: headers,
           body: JSON.stringify({ 
             messages: [...messages.map(m => ({ role: m.type === 'user' ? 'user' : 'assistant', content: m.content })), { role: 'user', content }],
-            use_rag: isRagEnabled
+            use_rag: isRagEnabled,
+            model: selectedModel
           }) 
       });
 
@@ -243,6 +279,21 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
                     {isRagEnabled ? 'RAG ON' : 'RAG OFF'}
                 </button>
 
+                {/* Model Selector */}
+                <select
+                    value={selectedModel}
+                    onChange={(e) => setSelectedModel(e.target.value)}
+                    className="mr-2 px-2 py-1.5 rounded-full bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase tracking-wider border-none outline-none hover:bg-slate-200 dark:hover:bg-white/10 transition-all cursor-pointer appearance-none"
+                    style={{ WebkitAppearance: 'none', MozAppearance: 'none' }}
+                >
+                    {models.map(m => (
+                        <option key={m.id} value={m.id}>
+                            {m.name}
+                        </option>
+                    ))}
+                    {models.length === 0 && <option value="glm-4-flash">GLM-4-Flash</option>}
+                </select>
+
                 <input
                     type="text"
                     value={inputValue}
@@ -269,6 +320,7 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
 };
 
 export default ChatView;
+
 
 
 

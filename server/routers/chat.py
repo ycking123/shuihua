@@ -15,6 +15,7 @@ from ..models import ChatSession, ChatMessage
 from ..database import SessionLocal
 from ..security import verify_token
 from .todos import create_todo_internal
+from ..services.llm_factory import LLMFactory
 
 router = APIRouter()
 
@@ -26,6 +27,11 @@ class ChatRequest(BaseModel):
     messages: list[Message]
     model: str = "glm-4-flash"
     use_rag: bool = False
+
+@router.get("/api/chat/models")
+def get_available_models():
+    """List all available LLM models."""
+    return LLMFactory.get_all_models()
 
 async def fetch_rag_context(query: str) -> str:
     url = "https://devmass.xunmei.com/xmmaas/maas/api/v1/chat/completions"
@@ -131,14 +137,6 @@ def get_chat_history(http_request: Request, db: Session = Depends(get_db)):
 
 @router.post("/api/chat")
 async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session = Depends(get_db)):
-    api_key = os.getenv("ZHIPUAI_API_KEY")
-    if not api_key:
-        # Try fallback
-        api_key = os.getenv("LOCAL_ZHIPU_APIKEY")
-    
-    if not api_key:
-        raise HTTPException(status_code=500, detail="ZHIPUAI_API_KEY not configured")
-
     # Extract user_id from token if available
     user_id = "00000000-0000-0000-0000-000000000000"
     auth_header = http_request.headers.get("Authorization")
@@ -152,8 +150,6 @@ async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session
         except Exception as e:
             print(f"⚠️ Token verification failed in chat: {e}")
 
-    client = ZhipuAI(api_key=api_key)
-    
     # 0. Persistence: Get Session and Save User Message
     session = get_or_create_default_session(db, user_id)
     session_id = session.id
@@ -295,23 +291,24 @@ async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session
         if rag_context:
             system_instruction += f"\n\n【参考知识库信息】\n{rag_context}\n\n请结合以上参考信息回答用户的问题。如果参考信息与问题不相关，请忽略它。"
 
-        response = client.chat.completions.create(
+        # Use LLM Factory to get provider and stream response
+        provider = LLMFactory.get_provider(request.model)
+        
+        # Convert Pydantic messages to dict
+        messages_dicts = [{"role": m.role, "content": m.content} for m in request.messages]
+        
+        response_generator = provider.chat_stream(
             model=request.model,
-            messages=[
-                {"role": "system", "content": system_instruction},
-                *([{"role": m.role, "content": m.content} for m in request.messages])
-            ],
-            stream=True,
+            messages=messages_dicts,
+            system_instruction=system_instruction
         )
 
         async def generate():
             full_response = ""
-            for chunk in response:
-                if chunk.choices[0].delta.content:
-                    content = chunk.choices[0].delta.content
-                    full_response += content
-                    yield f"data: {json.dumps({'content': content})}\n\n"
-                    await asyncio.sleep(0.005)
+            for content in response_generator:
+                full_response += content
+                yield f"data: {json.dumps({'content': content})}\n\n"
+                await asyncio.sleep(0.005)
             
             # Save Assistant Response to DB
             if full_response:
@@ -326,5 +323,6 @@ async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session
         print(f"❌ Chat generation failed: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+
 
 
