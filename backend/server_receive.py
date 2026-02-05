@@ -3,7 +3,6 @@ import logging
 import json
 import base64
 import time
-import httpx
 import fitz  # PyMuPDF
 from typing import List, Optional
 from datetime import datetime
@@ -180,22 +179,40 @@ def load_todos():
 # 初始化加载
 load_todos()
 
-def sync_todo_to_main_server(todo_item: TodoItem):
-    """
-    Syncs the new todo item to the main server (port 8000).
-    """
+def get_system_user_id(wecom_user_id: Optional[str]) -> Optional[str]:
+    db = SessionLocal()
     try:
-        # Assuming main server is on localhost:8000
-        # In a real deployment, this might need a configurable URL
-        url = "http://localhost:8000/api/todos"
-        # Use a timeout to prevent blocking for too long
-        response = httpx.post(url, json=todo_item.dict(), timeout=5.0)
-        if response.status_code == 200:
-            logger.info(f"✅ 同步待办到主服务器成功: {todo_item.title}")
-        else:
-            logger.error(f"❌ 同步待办到主服务器失败: Status {response.status_code}, {response.text}")
-    except Exception as e:
-        logger.error(f"❌ 同步待办到主服务器异常: {e}")
+        user = None
+        if wecom_user_id:
+            user = db.query(User).filter(
+                User.wecom_userid == wecom_user_id,
+                User.is_deleted == False
+            ).first()
+        if not user and wecom_user_id:
+            user = db.query(User).filter(
+                User.username == wecom_user_id,
+                User.is_deleted == False
+            ).first()
+        if user:
+            return user.id
+
+        default_user_id = "00000000-0000-0000-0000-000000000000"
+        default_user = db.query(User).filter(User.id == default_user_id).first()
+        if default_user:
+            return default_user.id
+
+        default_user = User(
+            id=default_user_id,
+            username="system_default",
+            password_hash="invalid",
+            full_name="System Default",
+            is_active=True
+        )
+        db.add(default_user)
+        db.commit()
+        return default_user_id
+    finally:
+        db.close()
 
 
 import uuid
@@ -208,46 +225,15 @@ def clean_text(text):
     if not text: return ""
     return "".join(c for c in text if len(c.encode('utf-8')) <= 3)
 
-def save_meeting_data_to_db(crawl_result, user_wecom_id):
+def save_meeting_data_to_db(crawl_result, system_user_id: Optional[str]):
     """
     Save crawled meeting data to database directly.
     """
     db = SessionLocal()
     try:
-        # 1. Find User
-        # msg.source is usually WeCom UserID.
-        # Try to find user by wecom_userid
-        user = None
-        if user_wecom_id:
-            user = db.query(User).filter(User.wecom_userid == user_wecom_id).first()
-        
-        # Fallback: try to match by username if wecom_userid not set or match failed
-        if not user and user_wecom_id:
-             user = db.query(User).filter(User.username == user_wecom_id).first()
-        
-        # Absolute fallback: use the first user found (system owner?)
-        if not user:
-            user = db.query(User).first()
-            logger.warning(f"⚠️ save_meeting_data_to_db: User {user_wecom_id} not found, associating with default user {user.username if user else 'None'}")
-        
-        if user:
-            user_id = user.id
-        else:
-            # Create default user if no users exist to avoid FK error
-            default_user_id = "00000000-0000-0000-0000-000000000000"
-            user = User(
-                id=default_user_id,
-                username="system_default",
-                password_hash="invalid",
-                full_name="System Default",
-                is_active=True
-            )
-            db.add(user)
-            db.commit() # Commit immediately to persist user
-            user_id = default_user_id
-            logger.info(f"✅ Created default user {user_id}")
+        user_id = system_user_id or get_system_user_id(None)
 
-        # 2. Save Meeting Record
+        # 1. Save Meeting Record
         new_meeting = Meeting(
             id=str(uuid.uuid4()),
             organizer_id=user_id,
@@ -262,7 +248,7 @@ def save_meeting_data_to_db(crawl_result, user_wecom_id):
         )
         db.add(new_meeting)
         
-        # 3. Save Todos
+        # 2. Save Todos
         extracted_todos = crawl_result.get("todos", [])
         # Parse if string
         if isinstance(extracted_todos, str):
@@ -314,7 +300,7 @@ def save_meeting_data_to_db(crawl_result, user_wecom_id):
                 db.add(new_todo)
                 count += 1
                 
-        # 4. Save Meeting Record Todo
+        # 3. Save Meeting Record Todo
         meeting_todo = Todo(
             id=str(uuid.uuid4()),
             user_id=user_id,
@@ -373,6 +359,106 @@ def convert_name_to_userid(name: str) -> str:
         logger.error(f"❌ Name conversion failed for {name}: {e}")
         return name
 
+def save_todos_to_db(todos_data: List[dict], user_id: Optional[str], source_origin: Optional[str] = None):
+    if not todos_data:
+        return 0
+    db = SessionLocal()
+    try:
+        resolved_user_id = user_id or get_system_user_id(None)
+        count = 0
+        for todo_data in todos_data:
+            if isinstance(todo_data, TodoItem):
+                todo_data = todo_data.dict()
+            title = todo_data.get("title") or "未命名任务"
+            content = todo_data.get("content")
+            todo_type = todo_data.get("type") or "task"
+            priority = todo_data.get("priority") or "normal"
+            status = todo_data.get("status") or "pending"
+            sender = todo_data.get("sender")
+            ai_summary = todo_data.get("aiSummary")
+            ai_action = todo_data.get("aiAction")
+            is_user_task = todo_data.get("isUserTask", False)
+            text_type = todo_data.get("textType", 0)
+
+            new_todo = Todo(
+                id=str(uuid.uuid4()),
+                user_id=resolved_user_id,
+                title=clean_text(title[:255]),
+                content=clean_text(content) if content else None,
+                type=todo_type,
+                priority=priority,
+                status=status,
+                sender=sender,
+                ai_summary=ai_summary,
+                ai_action=ai_action,
+                is_user_task=is_user_task,
+                text_type=text_type,
+                source_origin=source_origin,
+                created_at=datetime.now(),
+                updated_at=datetime.now()
+            )
+            db.add(new_todo)
+            count += 1
+        db.commit()
+        return count
+    except Exception as e:
+        db.rollback()
+        logger.error(f"❌ [DB] 保存待办失败: {e}")
+        return 0
+    finally:
+        db.close()
+
+def run_wecom_flow_test(wecom_user_id: str):
+    system_user_id = get_system_user_id(wecom_user_id)
+    mock_due = datetime.now().strftime("%Y-%m-%d %H:%M")
+    mock_json = json.dumps({
+        "summary": "企微模拟待办",
+        "task_list": [
+            {
+                "title": "测试文本待办",
+                "description": "验证企微文本流程写库",
+                "due_date": mock_due,
+                "assignee": "Sender（发送者）",
+                "priority": "中"
+            }
+        ]
+    }, ensure_ascii=False)
+
+    text_todos = parse_ai_result_to_todos(mock_json, wecom_user_id)
+    for todo in text_todos:
+        todo["textType"] = 1
+    saved_text = save_todos_to_db(text_todos, system_user_id, source_origin="wecom_text_test")
+
+    image_todos = []
+    for todo in text_todos:
+        image_todo = dict(todo)
+        image_todo["textType"] = 0
+        image_todo["title"] = f"图片测试-{image_todo.get('title')}"
+        image_todos.append(image_todo)
+    saved_image = save_todos_to_db(image_todos, system_user_id, source_origin="wecom_image_test")
+
+    meeting_mock = {
+        "title": "企微会议测试",
+        "summary": "验证会议流程写库",
+        "transcript": "这是测试会议纪要内容",
+        "todos": [
+            {
+                "title": "会议待办测试",
+                "description": "完成会议待办写库验证",
+                "priority": "high",
+                "assignee": "测试人员",
+                "due_date": mock_due
+            }
+        ]
+    }
+    saved_meeting = save_meeting_data_to_db(meeting_mock, system_user_id)
+    return {
+        "user_id": system_user_id,
+        "saved_text": saved_text,
+        "saved_image": saved_image,
+        "saved_meeting": saved_meeting
+    }
+
 def process_image_sync(media_id: str, user_id: str = None):
     """
     Synchronous function to process image, to be run in background task.
@@ -396,20 +482,19 @@ def process_image_sync(media_id: str, user_id: str = None):
         json_result = analyze_chat_screenshot_with_glm4v(base64_data)
         
         # 4. Parse and Store Results
+        system_user_id = get_system_user_id(user_id)
+
         if json_result:
             new_todos = parse_ai_result_to_todos(json_result, user_id)
             if new_todos:
+                saved_count = save_todos_to_db(new_todos, system_user_id, source_origin="wecom_image")
                 for todo_data in new_todos:
-                    # Convert dict to TodoItem model
                     try:
                         todo_item = TodoItem(**todo_data)
-                        todos_store.insert(0, todo_item) # Add to top
-                        # Sync to main server
-                        sync_todo_to_main_server(todo_item)
-                        logger.info(f"✅ 新增待办事项: {todo_item.title}")
-                    except Exception as e:
-                        logger.error(f"❌ 数据模型转换失败: {e}")
-                logger.info(f"✅ 图片分析完成，已添加 {len(new_todos)} 条待办")
+                        todos_store.insert(0, todo_item)
+                    except Exception:
+                        pass
+                logger.info(f"✅ 图片分析完成，已添加 {saved_count} 条待办")
             else:
                 logger.warning("⚠️ AI 分析结果解析为空")
         else:
@@ -491,6 +576,8 @@ def process_text_sync(text_content: str, user_id: str = None):
     """
     logger.info(f"📝 开始后台处理文本消息 from User: {user_id}")
     try:
+        system_user_id = get_system_user_id(user_id)
+
         # 0. 优先检查是否包含会议链接
         meeting_url = extract_meeting_url(text_content)
         if meeting_url:
@@ -502,8 +589,7 @@ def process_text_sync(text_content: str, user_id: str = None):
             crawl_result = crawl_meeting_minutes(meeting_url, WECOM_MEETING_COOKIES)
             
             if crawl_result:
-                # 直接存入数据库，不通过前端API传输
-                saved_count = save_meeting_data_to_db(crawl_result, user_id)
+                saved_count = save_meeting_data_to_db(crawl_result, system_user_id)
                 logger.info(f"✅ 会议链接处理完成，已存入数据库 (待办数: {saved_count})")
                 return # 结束处理
             else:
@@ -540,11 +626,8 @@ def process_text_sync(text_content: str, user_id: str = None):
                         isUserTask=False
                     )
                     
-                    # Store locally
+                    save_todos_to_db([todo_item], system_user_id, source_origin="wecom_meeting")
                     todos_store.insert(0, todo_item)
-                    
-                    # Sync to main server
-                    sync_todo_to_main_server(todo_item)
                     logger.info(f"✅ 新增会议待办事项: {todo_item.title}")
                     
                 except Exception as e:
@@ -563,23 +646,19 @@ def process_text_sync(text_content: str, user_id: str = None):
                 new_todos = parse_ai_result_to_todos(json_result, user_id)
                 if new_todos:
                     for todo_data in new_todos:
-                        # Update specific fields for text message
                         todo_data['textType'] = 1
-                        
-                        # Fallback defaults if AI missed them (though AI prompt handles most)
+
                         if todo_data.get('title') == "待定":
                             todo_data['title'] = text_content[:50]
-                        
-                        # Convert dict to TodoItem model
+                    saved_count = save_todos_to_db(new_todos, system_user_id, source_origin="wecom_text")
+                    for todo_data in new_todos:
                         try:
                             todo_item = TodoItem(**todo_data)
                             todos_store.insert(0, todo_item)
-                            # Sync to main server
-                            sync_todo_to_main_server(todo_item)
                             logger.info(f"✅ 新增文本待办事项: {todo_item.title}")
                         except Exception as e:
                             logger.error(f"❌ 数据模型转换失败: {e}")
-                    logger.info(f"✅ 文本分析完成，已添加 {len(new_todos)} 条待办")
+                    logger.info(f"✅ 文本分析完成，已添加 {saved_count} 条待办")
                 else:
                     logger.warning("⚠️ 文本AI分析结果解析为空")
             else:
@@ -658,8 +737,7 @@ async def get_todos():
 @app.post("/api/todos", response_model=TodoItem)
 async def add_todo(todo: TodoItem):
     todos_store.append(todo)
-    # Also sync to main server when receiving via API
-    sync_todo_to_main_server(todo)
+    save_todos_to_db([todo], get_system_user_id(None), source_origin="api")
     return todo
 
 # New API for AI Analysis Results (Optional, as todos are merged)
