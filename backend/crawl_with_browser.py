@@ -121,12 +121,7 @@ def analyze_with_llm(text_content, image_paths):
 def crawl_meeting_minutes(url, cookies_str):
     """
     使用 Playwright 模拟浏览器访问腾讯会议页面，获取动态加载的纪要内容，并截图给 LLM 分析。
-    Returns:
-        dict: {
-            "transcript": str,
-            "todos": list,
-            "screenshots": list
-        }
+    Adapted for CentOS 7 & Playwright 1.25.2
     """
     print(f"🚀 启动浏览器爬取: {url}")
     
@@ -148,11 +143,17 @@ def crawl_meeting_minutes(url, cookies_str):
 
     with sync_playwright() as p:
         # 启动 Chromium 浏览器
-        # 用户要求后台执行 (headless=True)
-        print("🚀 正在启动 Playwright 内置浏览器 (后台静默模式)...")
+        # 适配 CentOS 7: 添加 --no-sandbox 等参数
+        print("🚀 正在启动 Playwright 内置浏览器 (CentOS 7 兼容模式)...")
         browser = p.chromium.launch(
             headless=True,
-            args=['--disable-blink-features=AutomationControlled']
+            args=[
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--disable-blink-features=AutomationControlled'
+            ]
         )
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -160,7 +161,6 @@ def crawl_meeting_minutes(url, cookies_str):
         
         if cookies:
             context.add_cookies(cookies)
-            # print(f"🍪 已注入 {len(cookies)} 个 Cookies")
 
         page = context.new_page()
         
@@ -177,8 +177,11 @@ def crawl_meeting_minutes(url, cookies_str):
             
             for target_tab_name in target_tab_names:
                 # print(f"\n🔎 正在寻找并点击“{target_tab_name}”标签...")
-                elements = page.get_by_text(target_tab_name).all()
-                for el in elements:
+                # Playwright 1.25.2 兼容: 使用 text= 选择器而非 get_by_text
+                loc = page.locator(f"text={target_tab_name}")
+                count = loc.count()
+                for i in range(count):
+                    el = loc.nth(i)
                     if el.is_visible() and "tooltip" not in (el.get_attribute("class") or "").lower():
                         el.click()
                         # print(f"✅ 已点击“{target_tab_name}”")
@@ -306,5 +309,7 @@ def crawl_meeting_minutes(url, cookies_str):
                 pass
 
     return analysis_result
+
+
 
 # (Test code removed)

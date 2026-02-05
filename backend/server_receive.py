@@ -534,7 +534,23 @@ def create_wecom_meeting(meeting_info, creator_id):
                 attendee_list.append({"userid": userid})
         
         # 必需参数
-        start_time = int(meeting_info.get("start_time", time.time() + 1800))
+        start_time_raw = meeting_info.get("start_time")
+        if isinstance(start_time_raw, str):
+            try:
+                # 尝试解析 "YYYY-MM-DD HH:MM" 格式
+                dt = datetime.strptime(start_time_raw, "%Y-%m-%d %H:%M")
+                start_time = int(dt.timestamp())
+            except ValueError:
+                # 如果解析失败，尝试解析 "YYYY-MM-DD HH:MM:SS" 或 fallback
+                try:
+                    dt = datetime.strptime(start_time_raw, "%Y-%m-%d %H:%M:%S")
+                    start_time = int(dt.timestamp())
+                except ValueError:
+                    logger.warning(f"⚠️ 无法解析时间 '{start_time_raw}'，使用默认时间")
+                    start_time = int(time.time() + 1800)
+        else:
+            start_time = int(start_time_raw if start_time_raw else time.time() + 1800)
+
         end_time = start_time + int(meeting_info.get("duration", 3600))
         summary = meeting_info.get("topic", "临时会议")
         
@@ -606,6 +622,23 @@ def process_text_sync(text_content: str, user_id: str = None):
             meeting_info = extract_meeting_info(text_content)
             logger.info(f"📅 提取会议信息: {meeting_info}")
             
+            # --- Normalize start_time to timestamp (int) ---
+            start_time_raw = meeting_info.get("start_time")
+            if isinstance(start_time_raw, str):
+                try:
+                    dt = datetime.strptime(start_time_raw, "%Y-%m-%d %H:%M")
+                    meeting_info["start_time"] = int(dt.timestamp())
+                except ValueError:
+                    try:
+                        dt = datetime.strptime(start_time_raw, "%Y-%m-%d %H:%M:%S")
+                        meeting_info["start_time"] = int(dt.timestamp())
+                    except ValueError:
+                        logger.warning(f"⚠️ 无法解析时间 '{start_time_raw}'，使用默认时间")
+                        meeting_info["start_time"] = int(time.time() + 1800)
+            elif not start_time_raw:
+                 meeting_info["start_time"] = int(time.time() + 1800)
+            # -----------------------------------------------
+
             # Create Meeting
             if create_wecom_meeting(meeting_info, user_id):
                 # Notify success (optional, could add a system notification todo)
