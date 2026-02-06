@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import List, Generator, Any
 import os
 from zhipuai import ZhipuAI
+from openai import OpenAI
 
 class LLMProvider(ABC):
     @abstractmethod
@@ -13,6 +14,40 @@ class LLMProvider(ABC):
     def chat_stream(self, model: str, messages: List[dict], system_instruction: str = None) -> Generator[Any, None, None]:
         """Stream chat response."""
         pass
+
+class LocalLLMProvider(LLMProvider):
+    def __init__(self):
+        # Using the provided endpoint
+        self.client = OpenAI(
+            api_key="empty", 
+            base_url="http://43.248.97.247:45678/v1"
+        )
+        self.model_name = "MiniMaxAI/MiniMax-M2.1"
+
+    def list_models(self) -> List[str]:
+        return [self.model_name]
+
+    def chat_stream(self, model: str, messages: List[dict], system_instruction: str = None) -> Generator[Any, None, None]:
+        final_messages = []
+        if system_instruction:
+            final_messages.append({"role": "system", "content": system_instruction})
+        
+        final_messages.extend(messages)
+
+        # Using parameters from the user provided curl example
+        response = self.client.chat.completions.create(
+            model=model,
+            messages=final_messages,
+            stream=True,
+            temperature=1,
+            top_p=0.95,
+            max_tokens=10000,
+            extra_body={"top_k": 40}
+        )
+        
+        for chunk in response:
+            if chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
 
 class ZhipuProvider(LLMProvider):
     def __init__(self):
@@ -56,6 +91,9 @@ class LLMFactory:
         if model_name.startswith("glm"):
             return ZhipuProvider()
         
+        if model_name == "MiniMaxAI/MiniMax-M2.1":
+            return LocalLLMProvider()
+        
         # Default to Zhipu for now if unknown, or raise error
         # Ideally we check which provider supports the model
         return ZhipuProvider()
@@ -73,5 +111,13 @@ class LLMFactory:
         except Exception as e:
             print(f"Error initializing ZhipuProvider: {e}")
             
+        try:
+            local = LocalLLMProvider()
+            for m in local.list_models():
+                models.append({"id": m, "name": m, "provider": "Local Model"})
+        except Exception as e:
+            print(f"Error initializing LocalLLMProvider: {e}")
+            
         return models
+
 

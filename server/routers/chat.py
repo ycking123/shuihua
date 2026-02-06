@@ -16,8 +16,10 @@ from ..database import SessionLocal
 from ..security import verify_token
 from .todos import create_todo_internal
 from ..services.llm_factory import LLMFactory
+from ..services.search_service import SearchService
 
 router = APIRouter()
+search_service = SearchService()
 
 class Message(BaseModel):
     role: str
@@ -27,6 +29,7 @@ class ChatRequest(BaseModel):
     messages: list[Message]
     model: str = "glm-4-flash"
     use_rag: bool = False
+    use_search: bool = False
 
 @router.get("/api/chat/models")
 def get_available_models():
@@ -278,18 +281,38 @@ async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session
     try:
         # 4. Normal Chat Flow (Fallthrough)
         rag_context = ""
+        
+        # 4a. Web Search (if enabled)
+        search_context = ""
+        if request.use_search:
+            print(f"🌍 Web Search Enabled. Searching for: {last_user_message}")
+            try:
+                # We can use the whole message or extract keywords. 
+                # For simplicity, using the message directly or a simplified version is often okay for Tavily.
+                search_context = search_service.get_search_context(last_user_message)
+                if search_context:
+                    print(f"✅ Web Search Context found: {len(search_context)} chars")
+            except Exception as e:
+                print(f"❌ Web Search Failed: {e}")
+
+        # 4b. Knowledge Base RAG (if enabled)
         if request.use_rag:
-            query_msg = next((m.content for m in reversed(request.messages) if m.role == "user"), "")
-            if query_msg:
-                print(f"🔍 Fetching RAG context for: {query_msg}")
-                rag_context = await fetch_rag_context(query_msg)
+            if last_user_message:
+                print(f"🔍 Fetching RAG context for: {last_user_message}")
+                rag_context = await fetch_rag_context(last_user_message)
 
-        system_instruction = """
-        你是一个战略智僚助手。请以专业、简洁、有深度的风格直接回答用户的问题。
-        """
-
+        # Combine Contexts
+        system_instruction = "你是一个智能企业助手，名为“水华精灵”。请根据上下文回答用户问题。"
+        
+        additional_context = ""
+        if search_context:
+            additional_context += f"\n\n【联网搜索结果】\n{search_context}\n请结合以上搜索结果回答用户问题。如果搜索结果包含所需信息，请引用并综合回答。"
+            
         if rag_context:
-            system_instruction += f"\n\n【参考知识库信息】\n{rag_context}\n\n请结合以上参考信息回答用户的问题。如果参考信息与问题不相关，请忽略它。"
+            additional_context += f"\n\n【企业知识库相关信息】\n{rag_context}\n请优先基于上述企业知识库信息回答。"
+
+        if additional_context:
+            system_instruction += additional_context
 
         # Use LLM Factory to get provider and stream response
         provider = LLMFactory.get_provider(request.model)
@@ -323,6 +346,7 @@ async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session
         print(f"❌ Chat generation failed: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+
 
 
 
