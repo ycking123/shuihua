@@ -335,11 +335,11 @@ def save_meeting_data_to_db(crawl_result, system_user_id: Optional[str]):
         meeting_todo = Todo(
             id=str(uuid.uuid4()),
             user_id=user_id,
-            title=clean_text(f"【会议】{new_meeting.title}"),
+            title=clean_text(new_meeting.title),
             content=clean_text(f"【会议纪要】\n{new_meeting.summary[:500]}...\n\n已提取待办: {count}条"),
             type="meeting",
             priority="high",
-            status="completed", # It's a record
+            status="pending", # Keep as pending to show in active list
             sender="会议助手",
             source_origin="meeting_minutes",
             source_message_id=new_meeting.id,
