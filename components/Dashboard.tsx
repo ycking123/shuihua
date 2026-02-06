@@ -426,7 +426,7 @@ const Dashboard: React.FC<{ onNavigate: (v: ViewType, ctx?: string) => void }> =
                 <button onClick={() => setShareConfig({ isOpen: true, data: { title: `集团实时流动头寸日报 (¥${liquidity.value} 亿)`, type: "流动性快照" } })} className="p-2.5 bg-slate-100 dark:bg-white/5 hover:bg-blue-600/10 dark:hover:bg-blue-600/20 rounded-2xl border border-slate-200 dark:border-white/5 transition-all shadow-sm">
                     <Share2 size={16} className="text-slate-500 dark:text-slate-400 group-hover:text-blue-500" />
                 </button>
-                <button onClick={() => window.location.href = 'http://10.87.11.121:5092'} className="p-2.5 bg-slate-100 dark:bg-white/5 hover:bg-blue-600/10 dark:hover:bg-blue-600/20 rounded-2xl border border-slate-200 dark:border-white/5 transition-all shadow-sm active:scale-95">
+                <button onClick={() => window.location.href = 'http://43.248.97.247:34567/'} className="p-2.5 bg-slate-100 dark:bg-white/5 hover:bg-blue-600/10 dark:hover:bg-blue-600/20 rounded-2xl border border-slate-200 dark:border-white/5 transition-all shadow-sm active:scale-95">
                     <ArrowRight size={16} className="text-slate-500 dark:text-slate-400 group-hover:text-blue-500" />
                 </button>
             </div>
