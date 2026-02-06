@@ -140,17 +140,18 @@ def parse_ai_result_to_todos(json_output_str, sender_id=None):
 
 def analyze_intent(text_content):
     """
-    分析用户文本意图：是普通待办 (todo) 还是创建会议 (meeting)
+    分析用户文本意图：闲聊 (chat) / 普通待办 (todo) / 创建会议 (meeting)
     """
     if not text_content:
-        return "todo"
+        return "chat"
 
     system_prompt = """
-    请判断用户的意图。
-    如果用户想 "开会"、"预定会议"、"安排会议"、"讨论一下"，返回 "meeting"。
-    否则（如安排任务、提醒事项、普通待办），返回 "todo"。
-    
-    【重要】仅返回单词 "meeting" 或 "todo"，不要包含其他字符。
+    请判断用户的意图，只能返回以下三种之一：
+    - chat：闲聊/普通问答/咨询（如“你好”“怎么配置环境”“介绍下公司”）。
+    - meeting：与会议创建相关（如“安排会议”“预定会议”“讨论一下在几点开会”）。
+    - todo：与任务创建/提醒相关（如“今天下班前提交报表”“安排XX任务给小张”）。
+
+    只返回一个单词：chat / meeting / todo，不要包含其他字符。
     """
     
     try:
@@ -164,10 +165,12 @@ def analyze_intent(text_content):
         intent = response.choices[0].message.content.strip().lower()
         if "meeting" in intent:
             return "meeting"
-        return "todo"
+        if "todo" in intent:
+            return "todo"
+        return "chat"
     except Exception as e:
         print(f"❌ 意图识别失败: {e}")
-        return "todo"
+        return "chat"
 
 def extract_meeting_info(text_content):
     """

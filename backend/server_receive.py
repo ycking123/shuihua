@@ -225,6 +225,36 @@ def clean_text(text):
     if not text: return ""
     return "".join(c for c in text if len(c.encode('utf-8')) <= 3)
 
+def send_wecom_text(user_id: str, content: str) -> bool:
+    """
+    主动向企微用户发送文本消息
+    优先使用企业微信 Work 接口签名 (需要 agent_id)，否则尝试通用 send_text
+    """
+    try:
+        if not wechat_client:
+            logger.warning("⚠️ WeChatClient 未初始化，无法主动发送消息")
+            return False
+        agent_id = os.getenv("WECOM_AGENT_ID")
+        if hasattr(wechat_client, "message"):
+            if agent_id:
+                # 企业微信 work 签名：send_text(agent_id, user_id, content)
+                wechat_client.message.send_text(agent_id, user_id, content)
+            else:
+                # 兼容旧 enterprise 版本：send_text(user_id, content)
+                try:
+                    wechat_client.message.send_text(user_id, content)
+                except Exception as e:
+                    # 如果失败，提示需要配置 AgentID
+                    logger.warning(f"⚠️ 发送失败，可能缺少 WECOM_AGENT_ID: {e}")
+                    return False
+            logger.info(f"📨 已向企微用户 {user_id} 发送消息")
+            return True
+        logger.warning("⚠️ WeChatClient 不支持 message API")
+        return False
+    except Exception as e:
+        logger.error(f"❌ 企微消息发送失败: {e}")
+        return False
+
 def save_meeting_data_to_db(crawl_result, system_user_id: Optional[str]):
     """
     Save crawled meeting data to database directly.
@@ -617,7 +647,27 @@ def process_text_sync(text_content: str, user_id: str = None):
         intent = analyze_intent(text_content)
         logger.info(f"🧠 意图识别结果: {intent}")
         
-        if intent == "meeting":
+        if intent == "chat":
+            # 闲聊/普通问答：直接调用大模型生成快速回复，不做待办处理
+            try:
+                messages = [
+                    {"role": "system", "content": "你是一个企业微信智能助手，语气专业、简洁，直接回答用户问题。"},
+                    {"role": "user", "content": text_content}
+                ]
+                resp = client.chat.completions.create(
+                    model="glm-4-flash",
+                    messages=messages,
+                    temperature=0.2
+                )
+                reply_text = resp.choices[0].message.content.strip()
+                # 主动推送到企微
+                send_wecom_text(user_id, reply_text)
+                logger.info("✅ 闲聊回复已推送至企微")
+            except Exception as e:
+                logger.error(f"❌ 闲聊回复生成失败: {e}")
+            return
+        
+        elif intent == "meeting":
             # Process Meeting
             meeting_info = extract_meeting_info(text_content)
             logger.info(f"📅 提取会议信息: {meeting_info}")
@@ -662,6 +712,9 @@ def process_text_sync(text_content: str, user_id: str = None):
                     save_todos_to_db([todo_item], system_user_id, source_origin="wecom_meeting")
                     todos_store.insert(0, todo_item)
                     logger.info(f"✅ 新增会议待办事项: {todo_item.title}")
+                    # 主动推送结构化信息到企微
+                    push_text = f"会议已创建：{meeting_info.get('topic','会议')}\n时间：{meeting_time_str}\n参会人：{', '.join(meeting_info.get('attendees', []))}"
+                    send_wecom_text(user_id, push_text)
                     
                 except Exception as e:
                     logger.error(f"❌ 创建会议待办失败: {e}")
@@ -669,10 +722,14 @@ def process_text_sync(text_content: str, user_id: str = None):
                 # Fallback to todo if meeting creation fails? Or just log error
                 pass
                 
-        else:
+        elif intent == "todo":
             # Process Todo (Original Logic)
             # 1. Call AI Analysis (reuse logic)
-            json_result = analyze_text_message(text_content)
+            json_result = None
+            try:
+                json_result = analyze_text_message(text_content)
+            except Exception as e:
+                logger.error(f"❌ 文本待办分析失败: {e}")
             
             # 2. Parse and Store Results
             if json_result:
@@ -692,10 +749,32 @@ def process_text_sync(text_content: str, user_id: str = None):
                         except Exception as e:
                             logger.error(f"❌ 数据模型转换失败: {e}")
                     logger.info(f"✅ 文本分析完成，已添加 {saved_count} 条待办")
+                    # 结构化反馈（只推送概要）
+                    try:
+                        titles = [t.get("title", "") for t in new_todos if isinstance(t, dict)]
+                        push_text = "已创建待办事项：\n" + "\n".join([f"- {t}" for t in titles[:5]])
+                        send_wecom_text(user_id, push_text)
+                    except Exception as e:
+                        logger.warning(f"⚠️ 待办反馈推送失败: {e}")
                 else:
                     logger.warning("⚠️ 文本AI分析结果解析为空")
             else:
                 logger.warning("⚠️ 文本AI分析未返回有效 JSON")
+                # 智能兜底：调用大模型生成解释性回复
+                try:
+                    messages = [
+                        {"role": "system", "content": "你是一个企业微信智能助手。用户希望创建任务，但系统暂未提取到有效结构。请用简洁可执行的建议回复，并提示用户补充任务关键字段（标题/时间/责任人/优先级）。"},
+                        {"role": "user", "content": text_content}
+                    ]
+                    resp = client.chat.completions.create(
+                        model="glm-4-flash",
+                        messages=messages,
+                        temperature=0.3
+                    )
+                    reply_text = resp.choices[0].message.content.strip()
+                    send_wecom_text(user_id, reply_text)
+                except Exception as e:
+                    logger.error(f"❌ 智能兜底失败: {e}")
 
     except Exception as e:
         logger.error(f"❌ 文本处理流程异常: {e}")
@@ -859,4 +938,3 @@ if __name__ == "__main__":
     import uvicorn
     # Use 0.0.0.0 to allow external access
     uvicorn.run(app, host="0.0.0.0", port=8080)
-
