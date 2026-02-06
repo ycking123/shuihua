@@ -43,7 +43,7 @@ const TONE_MODES = [
 ];
 
 const PersonalView: React.FC = () => {
-  const [memo, setMemo] = useState("【我的核心关注】：目前作为资深战略分析官，我首要关注集团在华东区的品牌溢价能力与供应链周转效率。分析时请优先采用‘风险对冲’模型，并对任何毛利波动保持极高敏感度。");
+  const [memo, setMemo] = useState("最近关注:AI是否能辅助经销商更快速地生成设计效果图、自动化获客或进行客户关系管理。");
   const [showToneSelector, setShowToneSelector] = useState(false);
   const [currentTone, setCurrentTone] = useState(TONE_MODES[0]);
 
@@ -51,32 +51,32 @@ const PersonalView: React.FC = () => {
     {
       id: 1,
       category: '重点关注',
-      content: '华东大区 Q3 岩板市占率目标提升至 28.5%，需密切监控东鹏及新明珠在主流规格上的价格博弈动作。',
-      timestamp: '2024-05-20 14:30',
+      content: '本年每个季度欧神诺瓷砖板块经营性现金流净流入状态，以及综合融资成本情况和相关波动。',
+      timestamp: '2026-02-06 14:30',
       icon: Eye,
       color: 'blue'
     },
     {
       id: 2,
       category: '短期记忆',
-      content: '已记录：在 14:20 的推演中，用户对“供应链响应延迟”表现出高度关切，后续汇报将优先置顶物流进度。',
-      timestamp: '2024-05-20 14:22',
+      content: '董事长在最近与人力开会时强调了营销板块需要更多具备AI能力的优秀导购。（近期会议重点）',
+      timestamp: '2026-02-06 10:22',
       icon: Clock,
       color: 'orange'
     },
     {
       id: 3,
       category: '情景回顾',
-      content: '在讨论 2 号生产线时，用户偏好对比“能源损耗”而非“人力支出”，AI 已调整为能源优先的汇报逻辑。',
-      timestamp: '2024-05-18 16:45',
+      content: '董事长在历史汇报中更倾向于先看利润质量，而不是销售规模（决策偏好记录）',
+      timestamp: '2026-02-03 16:45',
       icon: RotateCcw,
       color: 'purple'
     },
     {
       id: 4,
       category: '事实偏好',
-      content: '确认事实：集团 3 号窖炉的盈亏平衡点位于日产 1.2 万平米，任何低于此阈值的排产计划需触发风险预警。',
-      timestamp: '2024-05-15 11:20',
+      content: '董事长偏好"结论先行"+"穿透数据"。AI 应先给出一个结论，再提供可点击查看的底层原始数据。',
+      timestamp: '2026-01-28 11:20',
       icon: BarChart,
       color: 'emerald'
     },
@@ -84,7 +84,7 @@ const PersonalView: React.FC = () => {
       id: 5,
       category: '经验积累',
       content: '模型沉淀：在市场下行周期中，“智慧精装”板块的毛利率通常较传统板块高出 6.4%，具备更强防御属性。',
-      timestamp: '2024-05-12 10:05',
+      timestamp: '2026-01-15 10:05',
       icon: GraduationCap,
       color: 'blue'
     }
@@ -100,7 +100,7 @@ const PersonalView: React.FC = () => {
   };
 
   return (
-    <div className="p-6 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-40">
+    <div className="p-6 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-40 overflow-y-auto h-screen">
       {/* 个人信息卡片 */}
       <div className="glass-card p-8 rounded-[3rem] border-slate-200/60 dark:border-white/10 relative overflow-hidden shadow-xl">
         <div className="absolute -top-10 -right-10 w-48 h-48 bg-blue-500/10 blur-[60px] rounded-full"></div>
@@ -111,7 +111,7 @@ const PersonalView: React.FC = () => {
             </div>
           </div>
           <div className="flex flex-col">
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">朱江</h2>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">吴志雄</h2>
             <div className="flex items-center gap-2 mt-1">
                 <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold uppercase tracking-[0.2em]">董事长</span>
                 <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-700"></span>

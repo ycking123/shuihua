@@ -4,7 +4,6 @@ import json
 import base64
 import time
 import fitz  # PyMuPDF
-import asyncio
 from typing import List, Optional
 from datetime import datetime
 from pathlib import Path
@@ -617,11 +616,11 @@ def create_wecom_meeting(meeting_info, creator_id):
                  
         return False
 
-def process_text_sync(text_content: str, user_id: str = None, intent: str = None):
+def process_text_sync(text_content: str, user_id: str = None):
     """
     Synchronous function to process text message
     """
-    logger.info(f"📝 开始后台处理文本消息 from User: {user_id} (Pre-analyzed Intent: {intent})")
+    logger.info(f"📝 开始后台处理文本消息 from User: {user_id}")
     try:
         system_user_id = get_system_user_id(user_id)
 
@@ -645,8 +644,7 @@ def process_text_sync(text_content: str, user_id: str = None, intent: str = None
                 # 暂时选择继续，可能用户只是发了个坏链接，但想表达其他意思
         
         # 1. Analyze Intent
-        if not intent:
-            intent = analyze_intent(text_content)
+        intent = analyze_intent(text_content)
         logger.info(f"🧠 意图识别结果: {intent}")
         
         if intent == "chat":
@@ -914,34 +912,9 @@ async def wechat_receive(
         logger.info(f"📩 收到消息: {msg.type} from {msg.source}")
 
         if msg.type == 'text':
-            # 1. 优先检查会议链接 (Regex, Fast)
-            meeting_url = extract_meeting_url(msg.content)
-            if meeting_url:
-                # 如果是会议链接，直接回复正在处理
-                background_tasks.add_task(process_text_sync, msg.content, msg.source)
-                reply_text = "已检测到会议链接，正在尝试爬取会议纪要，预计等待10分钟左右，请稍等..."
-            else:
-                # 2. 意图识别 (LLM) - 使用 asyncio.to_thread 避免阻塞
-                try:
-                    intent = await asyncio.to_thread(analyze_intent, msg.content)
-                except Exception as e:
-                    logger.error(f"❌ 意图识别异常: {e}")
-                    intent = "todo" # Fallback
-
-                # 根据意图生成不同回复
-                if intent == "chat":
-                    reply_text = "已收到消息，正在为您生成回复..."
-                elif intent == "meeting":
-                    reply_text = "已收到会议请求，正在处理相关内容..."
-                elif intent == "todo":
-                    reply_text = "已收到任务请求，正在分析生成待办..."
-                else:
-                    reply_text = "已收到消息，正在处理..."
-                
-                # 将 intent 传递给后台任务，避免重复分析
-                background_tasks.add_task(process_text_sync, msg.content, msg.source, intent=intent)
-            
-            reply = create_reply(reply_text, msg).render()
+            # 启动后台任务处理文本
+            background_tasks.add_task(process_text_sync, msg.content, msg.source)
+            reply = create_reply("已收到您的文本消息，正在分析生成待办...", msg).render()
         elif msg.type == 'image':
             # 启动后台任务处理图片
             background_tasks.add_task(process_image_sync, msg.media_id, msg.source)

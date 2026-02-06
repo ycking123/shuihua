@@ -44,9 +44,8 @@ def analyze_chat_screenshot_with_glm4v(base64_image_data):
     2.  必提信息：强制提取 DDL（截止时间）、责任人、任务详情，缺一不可。
     3.  DDL 规则：图片中明确提及 DDL 则直接提取并统一格式为 YYYY-MM-DD HH:MM；无明确提及 DDL 时，默认填充「当天日期 18:00」，格式为 YYYY-MM-DD HH:MM。
     4.  任务详情：完整提取任务的具体要求、执行内容、相关约束，不遗漏关键信息。
-    5.  责任人：图片中有明确责任人则直接提取；无明确责任人时，字段留空或返回 "待定"。
+    5.  责任人：图片中有明确责任人则直接提取；无明确责任人时，标记为「Sender（发送者）」。
     6.  优先级：根据内容语气判断（高/中/低），紧急语气（如「尽快」「务必」「今日完成」）标记为高，默认优先级为中。
-    7.  语言要求：所有提取内容必须使用中文。
 
     【重要】
     1.  直接返回 JSON 格式，无任何额外解释、备注、换行符之外的冗余内容。
@@ -59,7 +58,7 @@ def analyze_chat_screenshot_with_glm4v(base64_image_data):
           "title": "撰写XX产品需求文档（V1.0版本）",
           "description": "1. 结合用户反馈梳理产品核心功能；2. 绘制产品原型流程图；3. 标注功能优先级和实现难点",
           "due_date": "2026-01-30 18:00",
-          "assignee": "待定",
+          "assignee": "Sender（发送者）",
           "priority": "中"
         }
       ]
@@ -120,25 +119,17 @@ def parse_ai_result_to_todos(json_output_str, sender_id=None):
             # Use sender_id if available, otherwise default
             sender_name = sender_id if sender_id else parsed_json.get('summary', '聊天记录分析')
             
-            # Format title: Only add prefix if assignee is known and valid
-            assignee = t.get('assignee', '').strip()
-            task_title = t.get('title', '未命名任务')
-            if assignee and assignee not in ["待定", "Sender（发送者）", "Sender(发送者)"]:
-                 final_title = f"[{assignee}] {task_title}"
-            else:
-                 final_title = task_title
-
             payload = {
                 "id": f"chat-record-{int(time.time())}-{idx}",
                 "type": "chat_record",
                 "priority": api_priority,
-                "title": final_title,
+                "title": f"[{t.get('assignee', '待定')}] {t.get('title')}",
                 "sender": sender_name,
                 "time": datetime.now().strftime("%H:%M"),
                 "completed": False,
                 "status": "pending",
                 "aiSummary": f"截止日期: {t.get('due_date', '未指定')}",
-                "content": f"任务详情: {t.get('description')}\n责任人: {assignee if assignee else '待定'}\n截止时间: {t.get('due_date')}",
+                "content": f"任务详情: {t.get('description')}\n责任人: {t.get('assignee')}\n截止时间: {t.get('due_date')}",
                 "isUserTask": False
             }
             todo_list.append(payload)
@@ -240,9 +231,8 @@ def extract_todos_from_text(text_content):
     2.  必提信息：强制提取 DDL（截止时间）、责任人、任务详情，缺一不可。
     3.  DDL 规则：文本中明确提及 DDL 则直接提取并统一格式为 YYYY-MM-DD HH:MM；无明确提及 DDL 时，默认填充「当天日期 18:00」，格式为 YYYY-MM-DD HH:MM。
     4.  任务详情：完整提取任务的具体要求、执行内容、相关约束，不遗漏关键信息。
-    5.  责任人：文本中有明确责任人则直接提取；无明确责任人时，字段留空或返回 "待定"。
+    5.  责任人：文本中有明确责任人则直接提取；无明确责任人时，标记为「Sender（发送者）」。
     6.  优先级：根据文本语气判断（高/中/低），紧急语气（如「尽快」「务必」「今日完成」）标记为高，默认优先级为中。
-    7.  语言要求：所有提取内容必须使用中文。
 
     【重要】
     1.  直接返回 JSON 格式，无任何额外解释、备注、换行符之外的冗余内容。
@@ -255,7 +245,7 @@ def extract_todos_from_text(text_content):
           "title": "撰写XX产品需求文档（V1.0版本）",
           "description": "1. 结合用户反馈梳理产品核心功能；2. 绘制产品原型流程图；3. 标注功能优先级和实现难点",
           "due_date": "2026-01-30 18:00",
-          "assignee": "待定",
+          "assignee": "Sender（发送者）",
           "priority": "中"
         }
       ]
@@ -313,9 +303,8 @@ def analyze_text_message(text_content):
     2.  必提信息：强制提取 DDL（截止时间）、责任人、任务详情，缺一不可。
     3.  DDL 规则：文本中明确提及 DDL 则直接提取并统一格式为 YYYY-MM-DD HH:MM；无明确提及 DDL 时，默认填充「当天日期 18:00」，格式为 YYYY-MM-DD HH:MM。
     4.  任务详情：完整提取任务的具体要求、执行内容、相关约束，不遗漏关键信息。
-    5.  责任人：文本中有明确责任人则直接提取；无明确责任人时，字段留空或返回 "待定"。
+    5.  责任人：文本中有明确责任人则直接提取；无明确责任人时，标记为「Sender（发送者）」。
     6.  优先级：根据文本语气判断（高/中/低），紧急语气（如「尽快」「务必」「今日完成」）标记为高，默认优先级为中。
-    7.  语言要求：所有提取内容必须使用中文。
 
     【重要】
     1.  直接返回 JSON 格式，无任何额外解释、备注、换行符之外的冗余内容。
@@ -328,7 +317,7 @@ def analyze_text_message(text_content):
           "title": "撰写XX产品需求文档（V1.0版本）",
           "description": "1. 结合用户反馈梳理产品核心功能；2. 绘制产品原型流程图；3. 标注功能优先级和实现难点",
           "due_date": "2026-01-30 18:00",
-          "assignee": "待定",
+          "assignee": "Sender（发送者）",
           "priority": "中"
         }
       ]
@@ -387,25 +376,17 @@ def process_ai_result_and_push(json_output_str, sender_id=None):
             priority_map = {"高": "urgent", "中": "high", "低": "normal"}
             api_priority = priority_map.get(t.get('priority'), "normal")
             
-            # Format title: Only add prefix if assignee is known and valid
-            assignee = t.get('assignee', '').strip()
-            task_title = t.get('title', '未命名任务')
-            if assignee and assignee not in ["待定", "Sender（发送者）", "Sender(发送者)"]:
-                 final_title = f"[{assignee}] {task_title}"
-            else:
-                 final_title = task_title
-
             payload = {
                 "id": f"chat-record-{int(time.time())}-{idx}",
                 "type": "chat_record",  # 前端对应的新分类
                 "priority": api_priority,
-                "title": final_title,
+                "title": f"[{t.get('assignee', '待定')}] {t.get('title')}",
                 "sender": summary,
                 "time": datetime.now().strftime("%H:%M"),
                 "completed": False,
                 "status": "pending",
                 "aiSummary": f"截止日期: {t.get('due_date', '未指定')}",
-                "content": f"任务详情: {t.get('description')}\n责任人: {assignee if assignee else '待定'}\n截止时间: {t.get('due_date')}",
+                "content": f"任务详情: {t.get('description')}\n责任人: {t.get('assignee')}\n截止时间: {t.get('due_date')}",
                 "isUserTask": False
             }
             

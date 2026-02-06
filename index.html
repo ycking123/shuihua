@@ -26,7 +26,6 @@
             transition: background-color 0.5s ease, color 0.5s ease;
             margin: 0;
             -webkit-font-smoothing: antialiased;
-            overflow: hidden;
             touch-action: manipulation;
         }
         
@@ -76,6 +75,16 @@
 
         .no-scrollbar::-webkit-scrollbar {
             display: none;
+        }
+        
+        /* 隐藏所有滚动条但保持可滚动 */
+        * {
+            scrollbar-width: none; /* Firefox */
+            -ms-overflow-style: none; /* IE and Edge */
+        }
+        
+        *::-webkit-scrollbar {
+            display: none; /* Chrome, Safari and Opera */
         }
 
         @keyframes spin {

@@ -63,7 +63,7 @@ const ShareSheet: React.FC<ShareSheetProps> = ({ isOpen, onClose, data }) => {
 
   return (
     <div className="fixed inset-0 z-[200] flex items-end justify-center px-4 pb-8 animate-in fade-in duration-300">
-      <div className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={onClose}></div>
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose}></div>
       <div className="w-full max-w-md glass-card rounded-[2.5rem] border-white/10 p-6 z-10 animate-in slide-in-from-bottom-8 duration-500 relative overflow-hidden">
         <div className="absolute -top-24 -left-24 w-48 h-48 bg-blue-600/10 blur-[60px] rounded-full"></div>
         

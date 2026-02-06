@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Sparkles, Wallet, ChevronRight, Target, Radar, Box, Cpu, Zap, Gem, ReceiptText, PieChart, Info, Building2, TrendingUp, Share2, Globe, Brain, ChevronDown, ChevronUp, Users, Activity, GraduationCap, Network, FlaskConical } from 'lucide-react';
+import { Sparkles, Wallet, ChevronRight, Target, Radar, Box, Cpu, Zap, Gem, ReceiptText, PieChart, Info, Building2, TrendingUp, Share2, Globe, Brain, ChevronDown, ChevronUp, Users, Activity, GraduationCap, Network, FlaskConical, ArrowRight } from 'lucide-react';
 import { ViewType } from '../types';
 import ShareSheet from './ShareSheet';
 
@@ -306,7 +306,7 @@ const Dashboard: React.FC<{ onNavigate: (v: ViewType, ctx?: string) => void }> =
   const [expandedOrgId, setExpandedOrgId] = useState<string | null>(null);
   const [activePageIndex, setActivePageIndex] = useState(0);
   
-  const [liquidity, setLiquidity] = useState({ value: 148.2, trend: "+2.41%", status: "已优化" });
+  const [liquidity, setLiquidity] = useState({ value: 8.2, trend: "-3.5%", status: "持续关注" });
 
   const marketSentiment = useMemo(() => {
     const trendVal = parseFloat(liquidity.trend.replace('%', ''));
@@ -315,85 +315,85 @@ const Dashboard: React.FC<{ onNavigate: (v: ViewType, ctx?: string) => void }> =
     return 'neutral';
   }, [liquidity.trend]);
 
-  // Page 1: 帝王, 欧神诺 - 营收明细重构
+  // Page 1: 帝王, 欧神诺 - 营收明细重构（基于2025年真实预测数据）
   const pillarClusters = [
     { 
       id: 'c1', 
-      name: "帝王营收", 
-      revenue: "48.2 亿", 
-      cost: "32.1 亿", 
-      progress: 82, 
+      name: "帝王卫浴", 
+      revenue: "9.8 亿", 
+      cost: "7.2 亿", 
+      progress: 65, 
       icon: Box, 
       color: "blue", 
-      trend: "+5.2%", 
+      trend: "-8.5%", 
       breakdown: [
-        {label: "智能马桶营收", value: "18.5 亿"}, 
-        {label: "核心五金营收", value: "12.2 亿"}, 
-        {label: "全卫定制营收", value: "17.5 亿"}
+        {label: "智能马桶", value: "3.2 亿"}, 
+        {label: "浴室柜", value: "2.8 亿"}, 
+        {label: "五金卫浴", value: "3.8 亿"}
       ] 
     },
     { 
       id: 'c2', 
-      name: "欧神诺营收", 
-      revenue: "61.5 亿", 
-      cost: "41.8 亿", 
-      progress: 74, 
+      name: "欧神诺瓷砖", 
+      revenue: "13.5 亿", 
+      cost: "10.1 亿", 
+      progress: 58, 
       icon: Gem, 
       color: "emerald", 
-      trend: "+3.8%", 
+      trend: "-12.3%", 
       breakdown: [
-        {label: "中国玉瓷砖系列", value: "22.4 亿"}, 
-        {label: "工程大宗订单", value: "31.2 亿"}, 
-        {label: "零售渠道营收", value: "7.9 亿"}
+        {label: "工程渠道", value: "6.2 亿"}, 
+        {label: "零售渠道", value: "5.8 亿"}, 
+        {label: "出口业务", value: "1.5 亿"}
       ] 
     },
   ];
 
-  // Page 2: AI, 新材料 - 营收明细重构
+  // Page 2: 智能制造, 新零售 - 营收明细重构
   const strategicClusters = [
     { 
       id: 'c3', 
-      name: "AI 事业营收", 
-      revenue: "25.4 亿", 
-      cost: "18.2 亿", 
-      progress: 91, 
+      name: "智能制造升级", 
+      revenue: "待转化", 
+      cost: "1.8 亿", 
+      progress: 35, 
       icon: Cpu, 
       color: "indigo", 
-      trend: "+18.5%", 
+      trend: "筹建中", 
       isSpecial: true, 
       breakdown: [
-        {label: "智僚订阅服务", value: "12.4 亿"}, 
-        {label: "工业大脑方案", value: "8.2 亿"}, 
-        {label: "算法授权收益", value: "4.8 亿"}
+        {label: "数字化产线改造", value: "0.8 亿"}, 
+        {label: "智能仓储系统", value: "0.6 亿"}, 
+        {label: "AI质检投入", value: "0.4 亿"}
       ] 
     },
     { 
       id: 'c4', 
-      name: "新材料事业营收", 
-      revenue: "18.6 亿", 
-      cost: "12.4 亿", 
-      progress: 68, 
+      name: "新零售渠道", 
+      revenue: "待突破", 
+      cost: "1.2 亿", 
+      progress: 28, 
       icon: FlaskConical, 
       color: "orange", 
-      trend: "+4.2%", 
+      trend: "布局中", 
       isSpecial: true, 
       breakdown: [
-        {label: "抗菌功能材料", value: "8.4 亿"}, 
-        {label: "轻质航天岩板", value: "6.2 亿"}, 
-        {label: "柔性饰面板材", value: "4.0 亿"}
+        {label: "直播电商", value: "0.5 亿"}, 
+        {label: "社区团购", value: "0.4 亿"}, 
+        {label: "设计师渠道", value: "0.3 亿"}
       ] 
     },
   ];
 
   const orgMetrics = [
-    { id: 'o1', label: "AI 智僚渗透率", value: "78.4%", trend: "+12.2%", icon: Cpu, color: "indigo", logic: "实时监控全集团协同工具中智僚的调用频率。" },
-    { id: 'o2', label: "员工敬业度", value: "92", trend: "+2.1%", icon: Activity, color: "cyan", logic: "基于 NLP 提取协同信息中的语气效价生成评分。" },
-    { id: 'o3', label: "人才密度储备", value: "64.5%", trend: "+1.8%", icon: GraduationCap, color: "blue", logic: "衡量关键业务节点中高绩效复合型人才饱和度。" },
+    { id: 'o1', label: "渠道数字化率", value: "42.8%", trend: "+8.5%", icon: Cpu, color: "indigo", logic: "实时监控全渠道数字化工具使用覆盖率。" },
+    { id: 'o2', label: "经销商活跃度", value: "68", trend: "-5.2%", icon: Activity, color: "cyan", logic: "基于订单频次与回款周期综合评分。" },
+    { id: 'o3', label: "产品研发投入", value: "3.2%", trend: "+0.5%", icon: GraduationCap, color: "blue", logic: "研发费用占营收比例，衡量创新投入强度。" },
   ];
 
   const insightItems = [
-    { id: 1, icon: Target, color: "orange", isUrgent: true, text: "竞品在华东区启动价格博弈，主流岩板下调 14%，建议分析我方对冲策略。", subtext: "市场竞争态势深度分析" },
-    { id: 2, icon: Building2, color: "blue", text: "头部房企正寻求『人工智能+智慧精装』方案，建议提前进行场景化技术预研。", subtext: "战略预研及技术对标建议" }
+    { id: 1, icon: Target, color: "orange", isUrgent: true, text: "东鹏在2026年1月底的峰会上强调了“厂商协同”和“定制化胜出”。", subtext: "市场竞争态势深度分析" },
+    { id: 2, icon: Building2, color: "blue", text: "保利等房企对精装供应商的要求已转向“AI+全案交付”。", subtext: "战略预研及技术对标建议" }
   ];
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -413,18 +413,23 @@ const Dashboard: React.FC<{ onNavigate: (v: ViewType, ctx?: string) => void }> =
         <div className="absolute top-0 right-0 p-10 opacity-5 dark:opacity-10 rotate-12 transition-transform group-hover:rotate-45 duration-1000">
             <Wallet size={100} className="text-blue-500" />
         </div>
-        <div className="flex items-center justify-between mb-5 relative z-10">
-            <div className="flex items-center gap-2.5">
-                <div className={`w-2.5 h-2.5 rounded-full animate-pulse glow-blue ${marketSentiment === 'positive' ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
-                <span className="text-xs font-bold tracking-[0.2em] text-slate-500 dark:text-slate-400 uppercase">流动性实时监测</span>
-            </div>
-            <button onClick={() => setShareConfig({ isOpen: true, data: { title: `集团实时流动头寸日报 (¥${liquidity.value} 亿)`, type: "流动性快照" } })} className="p-2.5 bg-slate-100 dark:bg-white/5 hover:bg-blue-600/10 dark:hover:bg-blue-600/20 rounded-2xl border border-slate-200 dark:border-white/5 transition-all shadow-sm">
-                <Share2 size={16} className="text-slate-500 dark:text-slate-400 group-hover:text-blue-500" />
-            </button>
+        <div className="flex items-center gap-2.5 mb-5 relative z-10">
+            <div className={`w-2.5 h-2.5 rounded-full animate-pulse glow-blue ${marketSentiment === 'positive' ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
+            <span className="text-xs font-bold tracking-[0.2em] text-slate-500 dark:text-slate-400 uppercase">流动性实时监测</span>
         </div>
-        <div className="flex items-baseline gap-2.5">
-            <span className="text-5xl font-mono-prec font-bold text-slate-900 dark:text-white tracking-tighter">¥ {liquidity.value}</span>
-            <span className="text-2xl font-bold text-blue-600 dark:text-blue-500">亿</span>
+        <div className="flex items-end justify-between relative z-10">
+            <div className="flex items-baseline gap-2.5">
+                <span className="text-5xl font-mono-prec font-bold text-slate-900 dark:text-white tracking-tighter">¥ {liquidity.value}</span>
+                <span className="text-2xl font-bold text-blue-600 dark:text-blue-500">亿</span>
+            </div>
+            <div className="flex flex-col gap-2">
+                <button onClick={() => setShareConfig({ isOpen: true, data: { title: `集团实时流动头寸日报 (¥${liquidity.value} 亿)`, type: "流动性快照" } })} className="p-2.5 bg-slate-100 dark:bg-white/5 hover:bg-blue-600/10 dark:hover:bg-blue-600/20 rounded-2xl border border-slate-200 dark:border-white/5 transition-all shadow-sm">
+                    <Share2 size={16} className="text-slate-500 dark:text-slate-400 group-hover:text-blue-500" />
+                </button>
+                <button onClick={() => window.location.href = 'http://10.87.11.121:5092'} className="p-2.5 bg-slate-100 dark:bg-white/5 hover:bg-blue-600/10 dark:hover:bg-blue-600/20 rounded-2xl border border-slate-200 dark:border-white/5 transition-all shadow-sm active:scale-95">
+                    <ArrowRight size={16} className="text-slate-500 dark:text-slate-400 group-hover:text-blue-500" />
+                </button>
+            </div>
         </div>
       </div>
 
