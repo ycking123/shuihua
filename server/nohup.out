@@ -1,0 +1,501 @@
+INFO:     Started server process [18793]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     171.213.180.198:49236 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49239 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49239 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49239 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49239 - "OPTIONS /api/chat HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49239 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49239 - "GET /api/todos HTTP/1.1" 200 OK
+🔍 Fetching RAG context for: 你好
+🚀 Sending RAG request to https://devmass.xunmei.com/xmmaas/maas/api/v1/chat/completions with query: 你好
+✅ RAG API Raw Response: {"msg": "操作成功", "code": 200, "data": {"content": [{"description": "", "type": "text", "value": "[]"}], "guid": "c59eadeb-9055-47d2-8ec1-9f87c74b1c53", "role": "assistant"}}...
+📄 RAG Extracted Content Preview: []...
+📚 RAG Context retrieved (length: 2)
+INFO:     171.213.180.198:49239 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49239 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49239 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49239 - "GET /api/todos HTTP/1.1" 200 OK
+Intent detection failed: Expecting value: line 1 column 1 (char 0)
+🔍 Fetching RAG context for: 财务信息
+🚀 Sending RAG request to https://devmass.xunmei.com/xmmaas/maas/api/v1/chat/completions with query: 财务信息
+INFO:     171.213.180.198:49266 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49274 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49266 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49274 - "GET /api/todos HTTP/1.1" 200 OK
+✅ RAG API Raw Response: {"msg": "操作成功", "code": 200, "data": {"content": [{"description": "", "type": "text", "value": "[\"<document id='法务管理中心回复7.11.docx' title='法务管理中心回复7.11.docx'>问：员工离职后泄露公司客户信息，如何追责？答：若签有保密协议：可起诉要求赔偿损失，必要时申请行为禁令；若造成重大损失：可能涉嫌侵犯商业秘密罪（《刑法》第219条），可报警处理。问：客户拖欠货款超过合同约定期限，如何处理？</document>\\n\",\"<document id='印章使用实施细则1016.docx' title='印章使用实施细则1016.docx'>4.1.2合同专用章：专用于签订各类合同、协议的印章。专用于签订各类合同、协议。4.1.3法定代表人名章：刻有公司法定代表人姓名的印章。用于需要法人签署的重要事务、凭证。4.1.4财务专用章：办理公司会计核算、银行结算等财务事务的印章。用于银行票据、财务报表等财务文件。</document>\\n\",\"<document id='法务管理中心回复12.31.docx' title='法务管理中心回复12.31.docx'>问：员工离职后泄露公司客户信息，如何追责？#若签有保密协议：可起诉要求赔偿损失，必要时申请行为禁令；若造成重大损失：可能涉嫌侵犯商业秘密罪（《刑法》第219条），可报警处理。问：客户拖欠货款超过合同约定期限，如何处理？</document>\\n\",\"<document id='法务管理中心回复7.11.docx' title='法务管理中心回复7.11.docx'>5、提交申请，等待审核。附《申报流程操作指南》（表二）注意事项：1、请确保所填信息真实、准确、完整。2、请按要求上传清晰、完整的图片资料。3、如有任何疑问，请及时联系相关部门咨询。感谢您的配合！问：最新的商机报备流程。\\n答：请通过《欧神诺企信商机平台》进行工程项目申报。具体操作步骤如下：</document>\\n\",\"<document id='法务管理中心回复9.30.docx' title='法务管理中心回复9.30.docx'>5、提交申请，等待审核。附《申报流程操作指南》（表二）注...
+📄 RAG Extracted Content Preview: ["<document id='法务管理中心回复7.11.docx' title='法务管理中心回复7.11.docx'>问：员工离职后泄露公司客户信息，如何追责？答：若签有保密协议：可起诉要求赔偿损失，必要时申请行为禁令；若造成重大损失：可能涉嫌侵犯商业秘密罪（《刑法》第219条），可报警处理。问：客户拖欠货款超过合同约定期限，如何处理？</document>\n","<document id='印章使用实施细则1016.docx' title='印章使用实施细则1016.docx'>4.1.2合同专用章：专用于签订各类合同、协议的印章。专用于签订各类合同、协议。4.1.3法定代表人名章：刻有公司法定代表人姓名的印章。用于需要法人签署的重要事务、凭证。4.1.4财务专用章：办理公司会计核算、银行结算等财务事务的印章。用于银行票据、财务报表等财务文件。</document>\n","<document id='法务管理中心回复12.31.docx' title='法务管理中心回复12.31.docx'>问：员工离职后泄露公司客户信息，如何追责？#若签有保密协议：可起诉要求赔偿损失，必要...
+📚 RAG Context retrieved (length: 1022)
+INFO:     171.213.180.198:49239 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49274 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49284 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49239 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49239 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49239 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49239 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49239 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49239 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49239 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49239 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49239 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49239 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49239 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49386 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49386 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49386 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49386 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49386 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49386 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49386 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49386 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49386 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49386 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49386 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49430 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49430 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49430 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49430 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49430 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49430 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49430 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49454 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49454 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49454 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49465 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49469 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49469 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49486 - "GET /api/todos HTTP/1.1" 200 OK
+
+> water-essence-sprite@0.0.0 dev /home/git/shuihua
+> vite
+
+
+  VITE v4.5.14  ready in 249 ms
+
+  ➜  Local:   http://localhost:3000/
+  ➜  Network: http://172.30.231.139:3000/
+  ➜  Network: http://172.24.0.1:3000/
+INFO:     171.213.180.198:49649 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49651 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     199.45.154.155:60502 - "GET / HTTP/1.1" 404 Not Found
+WARNING:  Invalid HTTP request received.
+INFO:     199.45.154.155:11018 - "GET / HTTP/1.1" 404 Not Found
+INFO:     199.45.154.155:11026 - "PRI %2A HTTP/2.0" 404 Not Found
+WARNING:  Invalid HTTP request received.
+WARNING:  Invalid HTTP request received.
+INFO:     199.45.154.155:11084 - "GET /login HTTP/1.1" 404 Not Found
+INFO:     171.213.180.198:50062 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50064 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50064 - "OPTIONS /api/chat HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50064 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50062 - "GET /api/todos HTTP/1.1" 200 OK
+Intent detection failed: Expecting value: line 1 column 1 (char 0)
+🔍 Fetching RAG context for: 你是谁
+🚀 Sending RAG request to https://devmass.xunmei.com/xmmaas/maas/api/v1/chat/completions with query: 你是谁
+INFO:     171.213.180.198:50062 - "GET /api/todos HTTP/1.1" 200 OK
+✅ RAG API Raw Response: {"msg": "操作成功", "code": 200, "data": {"content": [{"description": "", "type": "text", "value": "[]"}], "guid": "03f0caef-09a8-44f9-8952-18bc038924b8", "role": "assistant"}}...
+📄 RAG Extracted Content Preview: []...
+📚 RAG Context retrieved (length: 2)
+INFO:     171.213.180.198:50064 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50064 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50089 - "GET /api/todos HTTP/1.1" 200 OK
+Intent detection failed: Expecting value: line 1 column 1 (char 0)
+🔍 Fetching RAG context for: 帝欧是什么公司
+🚀 Sending RAG request to https://devmass.xunmei.com/xmmaas/maas/api/v1/chat/completions with query: 帝欧是什么公司
+INFO:     171.213.180.198:50094 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50099 - "GET /api/todos HTTP/1.1" 200 OK
+✅ RAG API Raw Response: {"msg": "操作成功", "code": 200, "data": {"content": [{"description": "", "type": "text", "value": "[\"<document id='欧神诺公司内部优惠购砖管理规定.docx' title='欧神诺公司内部优惠购砖管理规定.docx'>如违规骗取低价折扣、赠送或有其他损害公司利益行为，公司按照《市场秩序维护管理规定》执行处罚。侵占公司财产构成犯罪的，提请司法机关处理。经办人或经办部门领导把关不严，未尽核实责任导致公司财产受到损失的，将对相关责任人员追责处理。</document>\\n\",\"<document id='欧神诺公司内部优惠购砖管理规定.docx' title='欧神诺公司内部优惠购砖管理规定.docx'>欧神诺公司内部优惠购砖管理规定文档变更记录：1、目的为了鼓励员工购买公司产品，提高员工幸福感获得感，增强公司关系客户的粘性及认可，完善公司内部员工、公司关系客户的优惠购砖流程，维护公司价格体系与市场秩序，特制定本管理规定。2、定义2.1公司内部员工，指与公司签订劳动合同的员工。享受公司内部员工统一购砖优惠价包括：员工与该员工直系亲属的自家装修。直系亲属包括：父母、岳父母、公婆等。</document>\\n\",\"<document id='现行修改版-帝欧大厦消防安全管理制度-202503.docx' title='现行修改版-帝欧大厦消防安全管理制度-202503.docx'>3.4各部门在帝欧大厦欧神诺总部办公的各部门协助人力行政中心行政管理部对本楼层、本部门的消防安全管理，其消防安全职责为：3.4.1遵守消防法律法规、遵守公司消防安全管理制度；3.4.2配合公司组织的消防安全工作（包括培训、防火检查、防火演练等）；</document>\\n\",\"<document id='品牌运营管理中心-AI客服知识库-6月.docx' title='品牌运营管理中心-AI客服知识库-6月.docx'>问：欧神诺的快手账号是多少答：oushennuo问：公司董事长的抖音号是多少？答：oceano.2问：帝欧雄哥的抖音视频号答：https://v.douyin.com/oyEKF78JIlo/问：小红书的案例可以转发吗？答：可以私聊或在评论区留言，得到许可即...
+📄 RAG Extracted Content Preview: ["<document id='欧神诺公司内部优惠购砖管理规定.docx' title='欧神诺公司内部优惠购砖管理规定.docx'>如违规骗取低价折扣、赠送或有其他损害公司利益行为，公司按照《市场秩序维护管理规定》执行处罚。侵占公司财产构成犯罪的，提请司法机关处理。经办人或经办部门领导把关不严，未尽核实责任导致公司财产受到损失的，将对相关责任人员追责处理。</document>\n","<document id='欧神诺公司内部优惠购砖管理规定.docx' title='欧神诺公司内部优惠购砖管理规定.docx'>欧神诺公司内部优惠购砖管理规定文档变更记录：1、目的为了鼓励员工购买公司产品，提高员工幸福感获得感，增强公司关系客户的粘性及认可，完善公司内部员工、公司关系客户的优惠购砖流程，维护公司价格体系与市场秩序，特制定本管理规定。2、定义2.1公司内部员工，指与公司签订劳动合同的员工。享受公司内部员工统一购砖优惠价包括：员工与该员工直系亲属的自家装修。直系亲属包括：父母、岳父母、公婆等。</document>\n","<document id='现行修改版-帝欧大厦消防安全管理制度...
+📚 RAG Context retrieved (length: 1189)
+INFO:     171.213.180.198:50089 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50089 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50089 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50108 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50108 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50108 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50584 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50586 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50586 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50586 - "GET /api/todos HTTP/1.1" 200 OK
+🔍 Fetching RAG context for: 你是谁
+🚀 Sending RAG request to https://devmass.xunmei.com/xmmaas/maas/api/v1/chat/completions with query: 你是谁
+INFO:     171.213.180.198:50607 - "GET /api/todos HTTP/1.1" 200 OK
+✅ RAG API Raw Response: {"msg": "操作成功", "code": 200, "data": {"content": [{"description": "", "type": "text", "value": "[]"}], "guid": "66520d26-4e7a-4d50-a624-d5df7d07a23e", "role": "assistant"}}...
+📄 RAG Extracted Content Preview: []...
+📚 RAG Context retrieved (length: 2)
+INFO:     171.213.180.198:50586 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50586 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50621 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50621 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50621 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50621 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50634 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50634 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50642 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50642 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50648 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50648 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50648 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50648 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50648 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50648 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50673 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50673 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50673 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50736 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50775 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50788 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50788 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50807 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50807 - "OPTIONS /api/chat HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50807 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50807 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50807 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50807 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50822 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50822 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50822 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50833 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50833 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50838 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50838 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50838 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50853 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50862 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50944 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50945 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50949 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50949 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50954 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50949 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50965 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50965 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50972 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50972 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50979 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50979 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50993 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50993 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50993 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50993 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50993 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51012 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51012 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51063 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51099 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51099 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51104 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51104 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51104 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51104 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51104 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51104 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51139 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51139 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51139 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51139 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51158 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51158 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51165 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51165 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51165 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51172 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51172 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51189 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51189 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51206 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51206 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51206 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51206 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51206 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51217 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51206 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51206 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51206 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:58839 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:58851 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51206 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:58851 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51233 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:58907 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51233 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:58907 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:58907 - "OPTIONS /api/chat HTTP/1.1" 200 OK
+Intent detection failed: Expecting value: line 1 column 1 (char 0)
+🔍 Fetching RAG context for: 欧神诺瓷砖一共多少s ku
+🚀 Sending RAG request to https://devmass.xunmei.com/xmmaas/maas/api/v1/chat/completions with query: 欧神诺瓷砖一共多少s ku
+INFO:     171.213.180.198:51233 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:58916 - "GET /api/todos HTTP/1.1" 200 OK
+✅ RAG API Raw Response: {"msg": "操作成功", "code": 200, "data": {"content": [{"description": "", "type": "text", "value": "[\"<document id='欧神诺AI客服系统内测问题基地回答汇总(3.17.）.docx' title='欧神诺AI客服系统内测问题基地回答汇总(3.17.）.docx'>43kg±1kg/箱；10.5厚度46kg±1kg/箱170、问：欧神诺瓷砖的边长的偏差范围答：欧神诺瓷砖的边长偏差范围根据国家标准GB/T3810.2的规定如下：每块砖的平均尺寸相对于工作尺寸的允许偏差为±1.0%至±1.5%。</document>\\n\",\"<document id='欧神诺AI客服系统内测问题基地回答汇总(3.17.）.docx' title='欧神诺AI客服系统内测问题基地回答汇总(3.17.）.docx'>168、问：欧神诺瓷砖800X1350规格的砖一箱重量是多少？答：欧神诺瓷砖800X1350规格的砖一箱重量是48±1KG169、问：欧神诺瓷砖800砖的重量答：800x800规格（3片装）标准重量：9.0厚度产品40kg±1kg/箱；9.5厚度</document>\\n\",\"<document id='欧神诺AI客服系统内测问题基地回答汇总(3.17.）.docx' title='欧神诺AI客服系统内测问题基地回答汇总(3.17.）.docx'>166、问：欧神诺产品变形和平整度是怎么样的？答：欧神诺产品的变形和平整度标准如下：变形标准检测依据:GB/T4100-2015检验方法:GB/T3810.2-2016167、问：欧神诺瓷砖1200X600规格仿古砖，现在是多少片一箱，一箱是多少公斤？答：欧神诺瓷砖1200X600规格仿古砖，12mm厚每箱2片，共42kg；9.5mm厚的每箱3片，共48kg</document>\\n\",\"<document id='欧神诺AI客服系统内测问题基地回答汇总(3.17.）.docx' title='欧神诺AI客服系统内测问题基地回答汇总(3.17.）.docx'>胶痕：香蕉水溶解后清除。177、问：欧神诺瓷砖中国玉系列的瓷砖莫式硬度答：欧神诺瓷砖中国玉系列的瓷砖莫式硬度在4~5级范围178、问：欧神诺的轻质砖可以生产...
+📄 RAG Extracted Content Preview: ["<document id='欧神诺AI客服系统内测问题基地回答汇总(3.17.）.docx' title='欧神诺AI客服系统内测问题基地回答汇总(3.17.）.docx'>43kg±1kg/箱；10.5厚度46kg±1kg/箱170、问：欧神诺瓷砖的边长的偏差范围答：欧神诺瓷砖的边长偏差范围根据国家标准GB/T3810.2的规定如下：每块砖的平均尺寸相对于工作尺寸的允许偏差为±1.0%至±1.5%。</document>\n","<document id='欧神诺AI客服系统内测问题基地回答汇总(3.17.）.docx' title='欧神诺AI客服系统内测问题基地回答汇总(3.17.）.docx'>168、问：欧神诺瓷砖800X1350规格的砖一箱重量是多少？答：欧神诺瓷砖800X1350规格的砖一箱重量是48±1KG169、问：欧神诺瓷砖800砖的重量答：800x800规格（3片装）标准重量：9.0厚度产品40kg±1kg/箱；9.5厚度</document>\n","<document id='欧神诺AI客服系统内测问题基地回答汇总(3.17.）.docx' title='...
+📚 RAG Context retrieved (length: 1102)
+INFO:     171.213.180.198:58907 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51233 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:58916 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51233 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:58907 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:58907 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51256 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:58952 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51256 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:58952 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51256 - "GET /api/todos HTTP/1.1" 200 OK
+Intent detection failed: Expecting value: line 1 column 1 (char 0)
+🔍 Fetching RAG context for: 欧神诺瓷砖销量
+🚀 Sending RAG request to https://devmass.xunmei.com/xmmaas/maas/api/v1/chat/completions with query: 欧神诺瓷砖销量
+INFO:     171.213.180.198:51256 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:58974 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:58974 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51256 - "GET /api/todos HTTP/1.1" 200 OK
+✅ RAG API Raw Response: {"msg": "操作成功", "code": 200, "data": {"content": [{"description": "", "type": "text", "value": "[\"<document id='欧神诺佛山标准终端展示话术【产品推广部】.docx' title='欧神诺佛山标准终端展示话术【产品推广部】.docx'>欧神诺瓷砖都是“双零”吸水率，也就是小于0.1%。吸水率越低，瓷砖更防污易打理，使用寿命也会更长。7.怎么用佛山标准看瓷砖的抗折强度：看来您对瓷砖的抗折强度有一定的了解，瓷砖的抗折强度不仅会影响瓷砖的运输和安装，还会影响使用寿命。</document>\\n\",\"<document id='欧神诺佛山标准终端展示话术【市场推广部】.docx' title='欧神诺佛山标准终端展示话术【市场推广部】.docx'>欧神诺瓷砖都是“双零”吸水率，也就是小于0.1%。吸水率越低，瓷砖更防污易打理，使用寿命也会更长。7.怎么用佛山标准看瓷砖的抗折强度：看来您对瓷砖的抗折强度有一定的了解，瓷砖的抗折强度不仅会影响瓷砖的运输和安装，还会影响使用寿命。</document>\\n\",\"<document id='欧神诺佛山标准终端展示话术【产品推广部】.docx' title='欧神诺佛山标准终端展示话术【产品推广部】.docx'>8.欧神诺瓷砖的佛山标准有认证吗：说到业内权威认准，我们欧神诺瓷砖产品质量是有权威机构背书的。这个是我们荣获沸腾质量奖的送检产品检测数据（展示海报等物料），像是超低吸水率和超低辐射，都是得到了专业机构的认证。</document>\\n\",\"<document id='欧神诺佛山标准终端展示话术【市场推广部】.docx' title='欧神诺佛山标准终端展示话术【市场推广部】.docx'>8.欧神诺瓷砖的佛山标准有认证吗：说到业内权威认准，我们欧神诺瓷砖产品质量是有权威机构背书的。这个是我们荣获沸腾质量奖的送检产品检测数据（展示海报等物料），像是超低吸水率和超低辐射，都是得到了专业机构的认证。</document>\\n\",\"<document id='欧神诺佛山标准终端展示话术【产品推广部】.docx' title='欧神诺佛山标准终端展示话术【产品推广部】.docx'>#####8、欧神诺瓷砖...
+📄 RAG Extracted Content Preview: ["<document id='欧神诺佛山标准终端展示话术【产品推广部】.docx' title='欧神诺佛山标准终端展示话术【产品推广部】.docx'>欧神诺瓷砖都是“双零”吸水率，也就是小于0.1%。吸水率越低，瓷砖更防污易打理，使用寿命也会更长。7.怎么用佛山标准看瓷砖的抗折强度：看来您对瓷砖的抗折强度有一定的了解，瓷砖的抗折强度不仅会影响瓷砖的运输和安装，还会影响使用寿命。</document>\n","<document id='欧神诺佛山标准终端展示话术【市场推广部】.docx' title='欧神诺佛山标准终端展示话术【市场推广部】.docx'>欧神诺瓷砖都是“双零”吸水率，也就是小于0.1%。吸水率越低，瓷砖更防污易打理，使用寿命也会更长。7.怎么用佛山标准看瓷砖的抗折强度：看来您对瓷砖的抗折强度有一定的了解，瓷砖的抗折强度不仅会影响瓷砖的运输和安装，还会影响使用寿命。</document>\n","<document id='欧神诺佛山标准终端展示话术【产品推广部】.docx' title='欧神诺佛山标准终端展示话术【产品推广部】.docx'>8.欧神诺瓷砖的佛山标...
+📚 RAG Context retrieved (length: 1005)
+INFO:     171.213.180.198:58952 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     171.213.180.198:58952 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51270 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:58952 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51270 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:58952 - "GET /api/todos HTTP/1.1" 200 OK
+Intent detection failed: Expecting value: line 1 column 1 (char 0)
+🔍 Fetching RAG context for: 产品推广有哪些信息
+🚀 Sending RAG request to https://devmass.xunmei.com/xmmaas/maas/api/v1/chat/completions with query: 产品推广有哪些信息
+INFO:     171.213.180.198:51270 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:59049 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51308 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51312 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     171.213.180.198:59053 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51314 - "GET /api/todos HTTP/1.1" 200 OK
+✅ RAG API Raw Response: {"msg": "操作成功", "code": 200, "data": {"content": [{"description": "", "type": "text", "value": "[\"<document id='七月整装新品440信息-市场推广部.docx' title='七月整装新品440信息-市场推广部.docx'>答：云羽为一面，定位面问：云羽的表面工艺是什么？答：无问：云羽的功能属性有什么？答：无问：云羽的产品版面图？答：云羽版面图如下：下载高清版面图请移步交互大屏或产品图册小程序问：云羽的效果图？答：云羽效果图如下：下载高清效果图请移步交互大屏或产品图册小程序</document>\\n\",\"<document id='品牌运营管理中心-AI客服知识库-6月.docx' title='品牌运营管理中心-AI客服知识库-6月.docx'>答：品牌运营管理中心有5个部门，分别是展示设计部，空间创意部，品牌策划部，品牌推广部和新零售部，品牌推广部主要是线上平台端的推广，侧重视频号，抖音号和小红书上面的平台内容运营推广。问：官网上面的产品信息如何修改？答：您可以通过以下办法解决：</document>\\n\",\"<document id='七月整装新品480信息-市场推广部.docx' title='七月整装新品480信息-市场推广部.docx'>答：春见表面附加工艺为精雕墨水问：春见的功能属性有什么？答：无问：春见的产品版面图？答：春见版面图如下：下载高清版面图请移步交互大屏或产品图册小程序问：春见的效果图？答：春见效果图如下：下载高清效果图请移步交互大屏或产品图册小程序问：春见适用的空间场景有哪些？</document>\\n\",\"<document id='七月整装新品480信息-市场推广部.docx' title='七月整装新品480信息-市场推广部.docx'>答：冬青为一石两面，定位面问：冬青的表面工艺是什么？答：冬青表面附加工艺为精雕墨水问：冬青的功能属性有什么？答：无问：冬青的产品版面图？答：冬青版面图如下：下载高清版面图请移步交互大屏或产品图册小程序问：冬青的效果图？</document>\\n\",\"<document id='品牌运营管理中心-AI客服知识库-5月.docx' title='品牌运营管理中心-AI客...
+📄 RAG Extracted Content Preview: ["<document id='七月整装新品440信息-市场推广部.docx' title='七月整装新品440信息-市场推广部.docx'>答：云羽为一面，定位面问：云羽的表面工艺是什么？答：无问：云羽的功能属性有什么？答：无问：云羽的产品版面图？答：云羽版面图如下：下载高清版面图请移步交互大屏或产品图册小程序问：云羽的效果图？答：云羽效果图如下：下载高清效果图请移步交互大屏或产品图册小程序</document>\n","<document id='品牌运营管理中心-AI客服知识库-6月.docx' title='品牌运营管理中心-AI客服知识库-6月.docx'>答：品牌运营管理中心有5个部门，分别是展示设计部，空间创意部，品牌策划部，品牌推广部和新零售部，品牌推广部主要是线上平台端的推广，侧重视频号，抖音号和小红书上面的平台内容运营推广。问：官网上面的产品信息如何修改？答：您可以通过以下办法解决：</document>\n","<document id='七月整装新品480信息-市场推广部.docx' title='七月整装新品480信息-市场推广部.docx'>答：春见表面附加...
+📚 RAG Context retrieved (length: 1074)
+INFO:     171.213.180.198:58952 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51312 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:59053 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:59053 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:59053 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:59053 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:58952 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:58952 - "GET /api/todos HTTP/1.1" 200 OK
+Intent detection failed: Expecting value: line 1 column 1 (char 0)
+🔍 Fetching RAG context for: 介绍中国玉
+🚀 Sending RAG request to https://devmass.xunmei.com/xmmaas/maas/api/v1/chat/completions with query: 介绍中国玉
+INFO:     171.213.180.198:59098 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:59145 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:59098 - "GET /api/todos HTTP/1.1" 200 OK
+✅ RAG API Raw Response: {"msg": "操作成功", "code": 200, "data": {"content": [{"description": "", "type": "text", "value": "[\"<document id='知识库0104内外部.xlsx' title='知识库0104内外部.xlsx'>链接：https://s.exexm.com/mRqmsWWj2pQ; 标题：2025中国玉秋季新品宣传片 ——知识库链接：https://s.exexm.com/mRqmRsHZVVS; 标题：新品赏析视频-接天碧 ——知识库链接：https://s.exexm.com/mRqmsWWsgKy; 标题：新品赏析视频-金篆玉 ——知识库链接：https://s.exexm.com/mRqmsWWsgh7; 标题：新品赏析视频-琅琊玉 ——知识库</document>\\n\",\"<document id='品牌运营中心-AI客服知识库-四季度.docx' title='品牌运营中心-AI客服知识库-四季度.docx'>问题：2025中国玉秋季新品宣传片\\n答案：https://s.exexm.com/mRqmsWWj2pQ问题：接天碧赏析视频\\n答案：https://s.exexm.com/mRqmRsHZVVS问题：金篆玉赏析视频\\n答案：https://s.exexm.com/mRqmsWWsgKy问题：琅琊玉赏析视频答案：https://s.exexm.com/mRqmsWWsgh7问题：凝脂玉赏析视频\\n答案：https://s.exexm.com/mRqbP6gg8au</document>\\n\",\"<document id='知识库+(3).xlsx' title='知识库+(3).xlsx'>知识编号：24; 知识分类名称：企业宣传视频; 链接：https://s.exexm.com/mRIV6V1UVpJ; 标题：2023年秋季新品【中国玉】 ——知识库知识编号：23; 知识分类名称：企业宣传视频; 链接：https://s.exexm.com/mRIVQGsQ6p5; 标题：2023年【中国玉】研发人员记录篇之玉见匠心 ——知识库</document>\\n\",\"<document id='品牌运营管理中心-AI客服知识库-9...
+📄 RAG Extracted Content Preview: ["<document id='知识库0104内外部.xlsx' title='知识库0104内外部.xlsx'>链接：https://s.exexm.com/mRqmsWWj2pQ; 标题：2025中国玉秋季新品宣传片 ——知识库链接：https://s.exexm.com/mRqmRsHZVVS; 标题：新品赏析视频-接天碧 ——知识库链接：https://s.exexm.com/mRqmsWWsgKy; 标题：新品赏析视频-金篆玉 ——知识库链接：https://s.exexm.com/mRqmsWWsgh7; 标题：新品赏析视频-琅琊玉 ——知识库</document>\n","<document id='品牌运营中心-AI客服知识库-四季度.docx' title='品牌运营中心-AI客服知识库-四季度.docx'>问题：2025中国玉秋季新品宣传片\n答案：https://s.exexm.com/mRqmsWWj2pQ问题：接天碧赏析视频\n答案：https://s.exexm.com/mRqmRsHZVVS问题：金篆玉赏析视频\n答案：https://s.exexm.co...
+📚 RAG Context retrieved (length: 1275)
+INFO:     171.213.180.198:58952 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     171.213.180.198:59098 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:59172 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:59172 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:58952 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:59198 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:59198 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:59204 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:59204 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:59204 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:59204 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:59313 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:59422 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:59554 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:59843 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:59926 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:60028 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:60173 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:60268 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:60377 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     89.248.164.165:42840 - "GET http%3A//ossweb-img.qq.com/images/js/eas/eas.js HTTP/1.1" 404 Not Found
+INFO:     171.213.180.198:60617 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:60773 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:60874 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:60939 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61062 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32614 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32613 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32615 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32628 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32646 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32648 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32655 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61117 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32658 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32659 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32661 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32662 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32663 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32664 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32672 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32673 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32674 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32675 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32681 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32682 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61215 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32683 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32684 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32685 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32686 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32687 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32688 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32689 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32690 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32691 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32692 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32693 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32694 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61351 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32695 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32696 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32697 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32698 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32699 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32700 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32701 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32702 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32703 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32704 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32705 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32706 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61433 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32707 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32708 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32710 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32711 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32718 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32723 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32738 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.219.232.70:32737 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61535 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61654 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61682 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61682 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61682 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61682 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61682 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61682 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61682 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61682 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61682 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61682 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61682 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61682 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61756 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61756 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61765 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61765 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61773 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61773 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61809 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61809 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61809 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61820 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61820 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61820 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61820 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61820 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61916 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:61994 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:62226 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:62328 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:62459 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:62511 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:62631 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:62767 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:62871 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:62949 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:63193 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:63366 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:63547 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:63736 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:63824 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:63874 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:63874 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:63932 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:63932 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:63932 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:63932 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:63932 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:63932 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:63932 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:63932 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:63932 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:63932 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64015 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64015 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64015 - "OPTIONS /api/chat HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64061 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64071 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64061 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64061 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64061 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64061 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64113 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64154 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64061 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64154 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64061 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64061 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64165 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64165 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64165 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64204 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64204 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64235 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64235 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64271 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64271 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64279 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64279 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64353 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     80.82.77.139:51496 - "GET / HTTP/1.1" 404 Not Found
+INFO:     80.82.77.139:52320 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     171.213.180.198:64401 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64487 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64574 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64648 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64788 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:64865 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:65061 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:65156 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:65262 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:65365 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:65517 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49191 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49263 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49374 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49499 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49571 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49728 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49851 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:49941 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50051 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50570 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50668 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:50908 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51303 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51433 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51581 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51694 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51849 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:51973 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:52082 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:52207 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:52321 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:52437 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:52500 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:52621 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     113.215.188.116:32427 - "GET / HTTP/1.1" 404 Not Found
+INFO:     171.213.180.198:52734 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:52878 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:52986 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     45.79.5.11:50626 - "GET / HTTP/1.1" 404 Not Found
+INFO:     172.236.228.86:40172 - "GET / HTTP/1.1" 404 Not Found
+INFO:     171.213.180.198:53088 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:53180 - "GET /api/todos HTTP/1.1" 200 OK
+WARNING:  Invalid HTTP request received.
+INFO:     171.213.180.198:53312 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:53393 - "GET /api/todos HTTP/1.1" 200 OK
+INFO:     171.213.180.198:53501 - "GET /api/todos HTTP/1.1" 200 OK
