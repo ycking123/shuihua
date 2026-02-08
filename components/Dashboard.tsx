@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Sparkles, Wallet, ChevronRight, Target, Radar, Box, Cpu, Zap, Gem, ReceiptText, PieChart, Info, Building2, TrendingUp, Share2, Globe, Brain, ChevronDown, ChevronUp, Users, Activity, GraduationCap, Network, FlaskConical, ArrowRight } from 'lucide-react';
+import { Sparkles, Wallet, ChevronRight, Target, Radar, Box, Cpu, Zap, Gem, ReceiptText, PieChart, Info, Building2, TrendingUp, Share2, Globe, Brain, ChevronDown, ChevronUp, Users, Activity, GraduationCap, Network, FlaskConical, ArrowRight, RefreshCw, ExternalLink, Search, MessageSquare, Menu, LayoutDashboard, X, FileText, Send, Loader2, Factory, Droplet } from 'lucide-react';
 import { ViewType } from '../types';
 import ShareSheet from './ShareSheet';
 
@@ -249,12 +249,80 @@ const OrgMetricCard: React.FC<{
   </div>
 );
 
+const SimpleMarkdown: React.FC<{ content: string }> = ({ content }) => {
+    if (!content) return null;
+
+    // Split by lines to handle list items and paragraphs
+    const lines = content.split('\n');
+
+    return (
+        <div className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-white dark:bg-white/5 p-3 rounded-xl border border-slate-200 dark:border-white/5">
+            {lines.map((line, index) => {
+                // Handle empty lines as spacers
+                if (!line.trim()) {
+                    return <div key={index} className="h-2" />;
+                }
+
+                // Handle Headers (###, ##, #)
+                const headerMatch = line.trim().match(/^(#{1,6})\s+(.+)$/);
+                if (headerMatch) {
+                    const level = headerMatch[1].length;
+                    const text = headerMatch[2];
+                    const fontSize = level === 1 ? 'text-base' : level === 2 ? 'text-sm' : 'text-xs';
+                    const fontWeight = 'font-bold';
+                    const color = 'text-slate-900 dark:text-white';
+                    
+                    return (
+                        <div key={index} className={`${fontSize} ${fontWeight} ${color} mt-3 mb-2 border-b border-slate-100 dark:border-white/5 pb-1`}>
+                            {text}
+                        </div>
+                    );
+                }
+
+                // Check for list items
+                const isList = line.trim().startsWith('- ') || line.trim().startsWith('• ') || line.trim().startsWith('* ');
+                const cleanLine = isList ? line.trim().replace(/^[-•*]\s+/, '') : line;
+
+                // Parse bold text: **text**
+                const parts = cleanLine.split(/(\*\*.*?\*\*)/g);
+
+                const renderedLine = (
+                    <span>
+                        {parts.map((part, i) => {
+                            if (part.startsWith('**') && part.endsWith('**')) {
+                                return <strong key={i} className="font-bold text-slate-800 dark:text-slate-100">{part.slice(2, -2)}</strong>;
+                            }
+                            return part;
+                        })}
+                    </span>
+                );
+
+                if (isList) {
+                    return (
+                        <div key={index} className="flex items-start gap-2 mb-1 pl-1">
+                            <span className="text-blue-500 mt-1">•</span>
+                            <div className="flex-1">{renderedLine}</div>
+                        </div>
+                    );
+                }
+
+                return <div key={index} className="mb-1">{renderedLine}</div>;
+            })}
+        </div>
+    );
+};
+
 const InsightItem: React.FC<{ 
   item: any;
   isExpanded: boolean;
   onToggle: () => void;
   onNavigate: (v: ViewType, ctx?: string) => void;
-}> = ({ item, isExpanded, onToggle, onNavigate }) => (
+  isLoading?: boolean;
+}> = ({ item, isExpanded, onToggle, onNavigate, isLoading }) => {
+  const isPlaceholder = item.content && (item.content.startsWith("正在获取") || item.content.includes("Failed to fetch"));
+  const showLoading = isLoading || (isPlaceholder && item.content !== "获取数据失败");
+
+  return (
   <div 
     className={`flex flex-col rounded-[1.8rem] border transition-all duration-300 ${
       item.isUrgent ? 'bg-red-500/5 dark:bg-red-500/10 border-red-500/20 dark:border-red-500/30' : 'bg-slate-50/50 dark:bg-white/5 border-slate-200/50 dark:border-white/5 shadow-sm'
@@ -278,33 +346,207 @@ const InsightItem: React.FC<{
       </div>
     </div>
 
-    <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isExpanded ? 'max-h-96 border-t border-slate-200 dark:border-white/5' : 'max-h-0'}`}>
+    <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isExpanded ? 'max-h-[1000px] border-t border-slate-200 dark:border-white/5' : 'max-h-0'}`}>
       <div className="p-5 bg-slate-100/50 dark:bg-black/40 space-y-4 shadow-inner">
-        <div className="flex items-center gap-2 text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">
-          <Globe size={12} /> 深度仿真推演背景 (DEEP SIMULATION)
-        </div>
-        <div className="pt-3 flex justify-center border-t border-slate-200 dark:border-white/5 mt-2">
-          <TopologySphereIcon 
-            color={item.color === 'orange' ? 'blue' : item.color} 
-            label="启动全局推演"
-            onClick={(e) => {
-              e.stopPropagation();
-              const context = `请针对以下洞察进行全局战略建模推演：\n\n【${item.subtext}】\n${item.text}`;
-              onNavigate(ViewType.CHAT, context);
-            }}
-          />
-        </div>
+        {item.isSearch ? (
+            <div className="space-y-3 animate-in fade-in duration-500">
+                <div className="flex items-center gap-2 text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-2">
+                    <Globe size={12} /> 实时情报详情
+                </div>
+                {showLoading ? (
+                    <div className="flex flex-col items-center justify-center py-8 gap-3 text-slate-400">
+                        <Loader2 className="animate-spin text-blue-500" size={24} />
+                        <span className="text-xs">正在进行多维战略搜索与AI深度研判...</span>
+                    </div>
+                ) : (
+                    <>
+                        <SimpleMarkdown content={item.content || ''} />
+                        {item.url && item.url !== '#' && (
+                            <a 
+                                href={item.url} 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                className="flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:underline text-xs mt-2 px-1"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <ExternalLink size={12} />
+                                查看来源原文
+                            </a>
+                        )}
+                    </>
+                )}
+            </div>
+        ) : (
+            <>
+                <div className="flex items-center gap-2 text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">
+                <Globe size={12} /> 深度仿真推演背景 (DEEP SIMULATION)
+                </div>
+                <div className="pt-3 flex justify-center border-t border-slate-200 dark:border-white/5 mt-2">
+                <TopologySphereIcon 
+                    color={item.color === 'orange' ? 'blue' : item.color} 
+                    label="启动全局推演"
+                    onClick={(e) => {
+                    e.stopPropagation();
+                    const context = `请针对以下洞察进行全局战略建模推演：\n\n【${item.subtext}】\n${item.text}`;
+                    onNavigate(ViewType.CHAT, context);
+                    }}
+                />
+                </div>
+            </>
+        )}
       </div>
     </div>
   </div>
 );
+};
+
+  const insightItems = [
+    { 
+        id: 'search-0', 
+        icon: Building2, 
+        color: "blue", 
+        isUrgent: true, 
+        text: "2024-2025 中国各省旧房改造补贴政策最新汇总", 
+        subtext: "政策风向标 (POLICY)",
+        content: "正在获取最新政策数据...",
+        url: "#",
+        isSearch: true
+    },
+    { 
+        id: 'search-1', 
+        icon: PieChart, 
+        color: "emerald", 
+        isUrgent: false, 
+        text: "马可波罗、东鹏、恒达、九牧、箭牌财报信息", 
+        subtext: "财务情报 (FINANCE)",
+        content: "正在获取最新财报信息...",
+        url: "#",
+        isSearch: true
+    },
+    { 
+        id: 'search-2', 
+        icon: Zap, 
+        color: "indigo", 
+        isUrgent: false, 
+        text: "智能制造", 
+        subtext: "技术前沿 (TECH)",
+        content: "正在获取最新智能制造动态...",
+        url: "#",
+        isSearch: true
+    },
+    { 
+        id: 'search-3', 
+        icon: Factory, 
+        color: "slate", 
+        isUrgent: false, 
+        text: "黑灯工厂", 
+        subtext: "生产革新 (MANUFACTURING)",
+        content: "正在获取黑灯工厂最新资讯...",
+        url: "#",
+        isSearch: true
+    },
+    { 
+        id: 'search-4', 
+        icon: Gem, 
+        color: "teal", 
+        isUrgent: false, 
+        text: "中国玉", 
+        subtext: "文化/产品 (CULTURE)",
+        content: "正在获取中国玉相关信息...",
+        url: "#",
+        isSearch: true
+    },
+    { 
+        id: 'search-5', 
+        icon: Droplet, 
+        color: "cyan", 
+        isUrgent: false, 
+        text: "智能马桶", 
+        subtext: "产品创新 (PRODUCT)",
+        content: "正在获取智能马桶相关资讯...",
+        url: "#",
+        isSearch: true
+    },
+    { 
+        id: 'search-6', 
+        icon: TrendingUp, 
+        color: "orange", 
+        isUrgent: false, 
+        text: "瓷砖卫浴行业动态", 
+        subtext: "行业洞察 (INDUSTRY)",
+        content: "正在获取行业最新动态...",
+        url: "#",
+        isSearch: true
+    }
+  ];
 
 const Dashboard: React.FC<{ onNavigate: (v: ViewType, ctx?: string) => void }> = ({ onNavigate }) => {
   const [shareConfig, setShareConfig] = useState<{ isOpen: boolean; data: any }>({ isOpen: false, data: {} });
-  const [expandedInsightId, setExpandedInsightId] = useState<number | null>(null);
+  const [expandedInsightId, setExpandedInsightId] = useState<string | null>(null);
   const [expandedClusterId, setExpandedClusterId] = useState<string | null>(null);
   const [expandedOrgId, setExpandedOrgId] = useState<string | null>(null);
   const [activePageIndex, setActivePageIndex] = useState(0);
+  const [strategyItems, setStrategyItems] = useState<any[]>(insightItems);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefreshStrategy = async () => {
+    setIsRefreshing(true);
+    try {
+        const res = await fetch('/api/dashboard/refresh-strategy', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!res.ok) {
+            throw new Error(`HTTP error! status: ${res.status}`);
+        }
+
+        const data = await res.json();
+        if (data.results) {
+            const newItems = data.results.map((r: any, idx: number) => {
+                let IconComponent = Building2;
+                if (r.icon_type === 'finance') IconComponent = PieChart;
+                else if (r.icon_type === 'tech') IconComponent = Zap;
+                else if (r.icon_type === 'factory') IconComponent = Factory;
+                else if (r.icon_type === 'material') IconComponent = Gem;
+                else if (r.icon_type === 'product') IconComponent = Droplet;
+                else if (r.icon_type === 'industry') IconComponent = TrendingUp;
+                else if (r.icon_type === 'target') IconComponent = Target;
+                else if (r.icon_type === 'policy') IconComponent = Building2;
+                
+                return {
+                    id: `search-${idx}`,
+                    icon: IconComponent,
+                    color: r.color,
+                    isUrgent: idx === 0,
+                    text: r.title, // Use title from API as the main text
+                    subtext: r.subtext,
+                    content: r.content,
+                    url: r.url,
+                    isSearch: true
+                };
+            });
+            setStrategyItems(newItems);
+        }
+    } catch (error) {
+        console.error("Failed to refresh strategy:", error);
+        // Update items to show error state
+        setStrategyItems(prev => prev.map(item => ({
+            ...item,
+            content: `获取数据失败: ${error instanceof Error ? error.message : String(error)}`,
+            url: '#'
+        })));
+    } finally {
+        setIsRefreshing(false);
+    }
+  };
+
+  // Initial fetch on mount
+  React.useEffect(() => {
+    handleRefreshStrategy();
+  }, []);
   
   const [liquidity, setLiquidity] = useState({ value: 8.2, trend: "-3.5%", status: "持续关注" });
 
@@ -389,11 +631,6 @@ const Dashboard: React.FC<{ onNavigate: (v: ViewType, ctx?: string) => void }> =
     { id: 'o1', label: "渠道数字化率", value: "42.8%", trend: "+8.5%", icon: Cpu, color: "indigo", logic: "实时监控全渠道数字化工具使用覆盖率。" },
     { id: 'o2', label: "经销商活跃度", value: "68", trend: "-5.2%", icon: Activity, color: "cyan", logic: "基于订单频次与回款周期综合评分。" },
     { id: 'o3', label: "产品研发投入", value: "3.2%", trend: "+0.5%", icon: GraduationCap, color: "blue", logic: "研发费用占营收比例，衡量创新投入强度。" },
-  ];
-
-  const insightItems = [
-    { id: 1, icon: Target, color: "orange", isUrgent: true, text: "东鹏在2026年1月底的峰会上强调了“厂商协同”和“定制化胜出”。", subtext: "市场竞争态势深度分析" },
-    { id: 2, icon: Building2, color: "blue", text: "保利等房企对精装供应商的要求已转向“AI+全案交付”。", subtext: "战略预研及技术对标建议" }
   ];
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -544,16 +781,26 @@ const Dashboard: React.FC<{ onNavigate: (v: ViewType, ctx?: string) => void }> =
             <Sparkles size={16} className="text-blue-600 dark:text-blue-500" />
             <h3 className="text-xs font-bold tracking-[0.1em] text-slate-900 dark:text-white uppercase italic">战略态势推演</h3>
           </div>
-          <Radar size={14} className="text-emerald-500 animate-spin-slow" />
+          <div className="flex items-center gap-3">
+             <button 
+                onClick={handleRefreshStrategy}
+                disabled={isRefreshing}
+                className={`p-1.5 rounded-full bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 transition-all ${isRefreshing ? 'animate-spin' : ''}`}
+             >
+                <RefreshCw size={12} className="text-slate-500 dark:text-slate-400" />
+             </button>
+             <Radar size={14} className="text-emerald-500 animate-spin-slow" />
+          </div>
         </div>
         <div className="glass-card p-2.5 rounded-[2.5rem] bg-white/40 dark:bg-black/20 space-y-3.5">
-          {insightItems.map(item => (
+          {strategyItems.map(item => (
             <InsightItem 
               key={item.id}
               item={item}
               isExpanded={expandedInsightId === item.id}
               onToggle={() => setExpandedInsightId(expandedInsightId === item.id ? null : item.id)}
               onNavigate={onNavigate}
+              isLoading={isRefreshing}
             />
           ))}
         </div>
@@ -563,3 +810,4 @@ const Dashboard: React.FC<{ onNavigate: (v: ViewType, ctx?: string) => void }> =
 };
 
 export default Dashboard;
+

@@ -10,14 +10,17 @@ export default defineConfig(({ mode }) => {
         host: '0.0.0.0',
         proxy: {
           '/api': {
-            // target: 'http://localhost:8000',
-            target: 'http://47.121.138.58:8000',
+            target: 'http://localhost:8000',
+            // target: 'http://47.121.138.58:8000',
             changeOrigin: true,
             secure: false,
+            ws: true,
           }
         }
       },
-      plugins: [react()],
+      plugins: [
+        react()
+      ],
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
@@ -29,4 +32,5 @@ export default defineConfig(({ mode }) => {
       }
     };
 });
+
 

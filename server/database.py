@@ -6,8 +6,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # 获取数据库配置
+# Use explicit empty string as default for password if not set
 DB_USER = os.getenv("DB_USER", "root")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "123456") # Try 123456 as default fallback
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = os.getenv("DB_PORT", "3306")
 DB_NAME = os.getenv("DB_NAME", "shuihua")
@@ -67,5 +68,6 @@ def get_db():
         yield session
     finally:
         session.close()
+
 
 

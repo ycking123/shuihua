@@ -4,188 +4,179 @@ import hmac
 import hashlib
 import base64
 import urllib.parse
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
+from time import mktime
+from wsgiref.handlers import format_date_time
 import asyncio
 import websockets
 import ssl
-import uuid
-
-# 全局配置：与服务端确认的固定参数 (参考 Demo)
-FIXED_PARAMS = {
-    "audio_encode": "pcm_s16le",
-    "lang": "autodialect",
-    "samplerate": "16000"
-}
-# 16k采样率，16bit位深，单声道 => 32KB/s => 32 bytes/ms
-# Demo 建议 40ms 发送 1280 bytes
-AUDIO_FRAME_SIZE = 1280 
-FRAME_INTERVAL_S = 0.04 # 40ms
 
 class XunfeiASRService:
     def __init__(self, app_id, api_key, api_secret):
-        self.app_id = app_id
-        self.access_key_id = api_key      # API_KEY 对应 accessKeyId
-        self.access_key_secret = api_secret # API_SECRET 对应 accessKeySecret
+        self.app_id = str(app_id).strip()
+        self.api_key = str(api_key).strip()
+        self.api_secret = str(api_secret).strip()
+        self.host = "iat.xf-yun.com"
+        self.url = f"wss://{self.host}/v1"
         
-        # 使用 Demo 提供的 URL
-        self.base_url = "wss://office-api-ast-dx.iflyaisol.com/ast/communicate/v1"
-
-    def _get_utc_time(self):
-        """生成服务端要求的UTC时间格式：yyyy-MM-dd'T'HH:mm:ss+0800"""
-        beijing_tz = timezone(timedelta(hours=8))
-        now = datetime.now(beijing_tz)
-        return now.strftime("%Y-%m-%dT%H:%M:%S%z")
-
-    def create_url(self):
-        """生成鉴权 URL (参考 Demo _generate_auth_params)"""
-        auth_params = {
-            "accessKeyId": self.access_key_id,
-            "appId": self.app_id,
-            "uuid": uuid.uuid4().hex,
-            "utc": self._get_utc_time(),
-            **FIXED_PARAMS
+        # Match demo parameters exactly
+        self.iat_params = {
+            "domain": "slm", 
+            "language": "zh_cn", 
+            "accent": "mandarin",
+            "dwa": "wpgs",
+            "result": {
+                "encoding": "utf8",
+                "compress": "raw",
+                "format": "plain"
+            }
         }
 
-        # 计算签名：过滤空值 → 字典序排序 → URL编码 → 拼接基础字符串
-        sorted_params = dict(sorted([
-            (k, v) for k, v in auth_params.items()
-            if v is not None and str(v).strip() != ""
-        ]))
-        
-        base_str = "&".join([
-            f"{urllib.parse.quote(k, safe='')}={urllib.parse.quote(v, safe='')}"
-            for k, v in sorted_params.items()
-        ])
+    def create_url(self):
+        """生成鉴权 URL"""
+        # 生成RFC1123格式的时间戳
+        now = datetime.now()
+        date = format_date_time(mktime(now.timetuple()))
 
-        # HMAC-SHA1 加密 + Base64编码
-        signature = hmac.new(
-            self.access_key_secret.encode("utf-8"),
-            base_str.encode("utf-8"),
-            hashlib.sha1
-        ).digest()
-        
-        auth_params["signature"] = base64.b64encode(signature).decode("utf-8")
-        
-        # 生成完整 URL
-        params_str = urllib.parse.urlencode(auth_params)
-        return f"{self.base_url}?{params_str}"
+        # 拼接签名字符串
+        signature_origin = "host: " + self.host + "\n"
+        signature_origin += "date: " + date + "\n"
+        signature_origin += "GET /v1 HTTP/1.1"
+
+        # hmac-sha256 加密
+        signature_sha = hmac.new(self.api_secret.encode('utf-8'), signature_origin.encode('utf-8'),
+                                 digestmod=hashlib.sha256).digest()
+        signature_sha = base64.b64encode(signature_sha).decode(encoding='utf-8')
+
+        authorization_origin = f'api_key="{self.api_key}", algorithm="hmac-sha256", headers="host date request-line", signature="{signature_sha}"'
+        authorization = base64.b64encode(authorization_origin.encode('utf-8')).decode(encoding='utf-8')
+
+        # 组合成最终的url
+        v = {
+            "authorization": authorization,
+            "date": date,
+            "host": self.host
+        }
+        return self.url + '?' + urllib.parse.urlencode(v)
 
     async def stream_audio(self, audio_generator, callback):
         """
-        连接讯飞 RTASR WebSocket 并流式发送音频
+        连接讯飞 WebSocket 并流式发送音频
         """
         url = self.create_url()
-        print(f"Connecting to Xunfei RTASR: {url[:60]}...", flush=True)
+        print(f"Connecting to Xunfei IAT: {url[:60]}...", flush=True)
         
         ssl_context = ssl.create_default_context()
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
         
         try:
-            async with websockets.connect(url, ssl=ssl_context, ping_interval=20, ping_timeout=20) as ws:
-                print("Connected to Xunfei RTASR", flush=True)
+            async with websockets.connect(url, ssl=ssl_context) as ws:
+                print("Connected to Xunfei IAT", flush=True)
                 
                 # 接收任务
                 async def receive_msg():
                     try:
-                        while True:
-                            try:
-                                msg = await ws.recv()
-                            except websockets.exceptions.ConnectionClosed:
-                                print("ASR WebSocket connection closed by remote", flush=True)
-                                break
-                                
+                        async for msg in ws:
                             msg_json = json.loads(msg)
+                            code = msg_json["header"]["code"]
                             
-                            action = msg_json.get("action")
-                            msg_type = msg_json.get("msg_type")
-                            code = msg_json.get("code")
+                            if code != 0:
+                                print(f"ASR Error: {code}, {msg_json['header'].get('message')}", flush=True)
+                                await callback({"error": f"ASR Error {code}"})
+                                # Don't break immediately, let the server close or handle it
+                                # But usually code != 0 means fatal error for this session
+                                return 
                             
-                            if code and code != "0":
-                                print(f"ASR Error Code: {code}, Msg: {msg_json}", flush=True)
-
-                            if msg_type == "result" or action == "result":
-                                data = msg_json.get("data")
-                                if data:
-                                    try:
-                                        # 如果 data 是字符串，则解析；如果是字典，直接使用
-                                        if isinstance(data, str):
-                                            data = json.loads(data)
-                                        
-                                        # 解析 RTASR 结果结构
-                                        # 结构: {"cn": {"st":..., "cw": [...]}, "seg_id": ...}
-                                        
-                                        text = ""
-                                        
-                                        cn_data = data.get("cn", {})
-                                        st_data = cn_data.get("st", {})
-                                        type_val = st_data.get("type") # 0:最终结果, 1:中间结果
-                                        
-                                        st = st_data
-                                        if "rt" in st:
-                                            for rt in st["rt"]:
-                                                for ws_item in rt.get("ws", []):
-                                                    for cw in ws_item.get("cw", []):
-                                                        if "w" in cw:
-                                                            text += cw["w"]
-                                        
-                                        if text:
-                                            print(f"ASR Text: {text}, Type: {type_val}", flush=True)
-                                            # 发送给前端，is_final 用于标识是否是句子的最终结果
-                                            await callback({"text": text, "is_final": type_val == "0"})
-                                            
-                                    except Exception as e:
-                                        print(f"Error parsing RTASR data: {e}, Raw Data: {data}", flush=True)
-
+                            payload = msg_json.get("payload")
+                            if payload:
+                                result = payload.get("result")
+                                if result:
+                                    text_base64 = result.get("text")
+                                    text_json = base64.b64decode(text_base64).decode('utf-8')
+                                    data = json.loads(text_json)
+                                    res = ""
+                                    for w in data['ws']:
+                                        for cw in w['cw']:
+                                            res += cw['w']
+                                    
+                                    # Send partial/final result
+                                    # ls (last status): boolean, true if last result
+                                    is_last = data.get('ls', False)
+                                    await callback({"text": res, "is_final": is_last})
+                            
+                            if msg_json["header"]["status"] == 2:
+                                break
                     except Exception as e:
-                        print(f"Error receiving from Xunfei: {e}", flush=True)
+                        print(f"Receive error: {e}", flush=True)
+
+                receive_task = asyncio.create_task(receive_msg())
 
                 # 发送任务
-                async def send_audio():
-                    try:
-                        # 缓冲区，用于积攒到 1280 bytes
-                        buffer = bytearray()
+                status = 0 # 0:第一帧, 1:中间帧, 2:最后一帧
+                try:
+                    async for chunk in audio_generator:
+                        if chunk is None:
+                            break
                         
-                        # 流控变量
-                        start_time = time.time()
-                        bytes_sent = 0
+                        audio_b64 = str(base64.b64encode(chunk), 'utf-8')
                         
-                        async for chunk in audio_generator:
-                            if not chunk: continue
-                            
-                            buffer.extend(chunk)
-                            
-                            # 按照 1280 bytes 分片发送
-                            while len(buffer) >= AUDIO_FRAME_SIZE:
-                                frame = buffer[:AUDIO_FRAME_SIZE]
-                                buffer = buffer[AUDIO_FRAME_SIZE:]
-                                
-                                await ws.send(frame)
-                                bytes_sent += len(frame)
-                                
-                                # 智能流控：仅在发送速度超过实时音频速度时等待
-                                # 16k * 16bit * 1ch = 32000 bytes/s
-                                expected_time = bytes_sent / 32000.0
-                                now = time.time()
-                                wait_time = expected_time - (now - start_time)
-                                
-                                if wait_time > 0.005: # 只有当超前超过 5ms 时才 sleep，避免频繁 sleep
-                                    await asyncio.sleep(wait_time)
+                        # Construct frame data EXACTLY as in the demo
+                        # Note: Demo sends 'parameter' in EVERY frame
+                        data = {
+                            "header": {
+                                "status": status,
+                                "app_id": self.app_id
+                            },
+                            "parameter": {
+                                "iat": self.iat_params
+                            },
+                            "payload": {
+                                "audio": {
+                                    "audio": audio_b64,
+                                    "sample_rate": 16000,
+                                    "encoding": "raw"
+                                }
+                            }
+                        }
                         
-                        # 发送剩余数据
-                        if len(buffer) > 0:
-                            await ws.send(buffer)
-                            
-                        # 发送结束标记
-                        await ws.send(b"{\"end\": true}") 
-                        print("Sent end signal to Xunfei", flush=True)
+                        if status == 0:
+                            print(f"ASR Sending First Frame", flush=True)
+                            status = 1 # Next frames are continue frames
                         
-                    except Exception as e:
-                        print(f"Error sending to Xunfei: {e}", flush=True)
+                        await ws.send(json.dumps(data))
+                        
+                        # Use 0.04s interval to match iFlytek recommended rate (40ms)
+                        await asyncio.sleep(0.04)
 
-                # 并发运行
-                await asyncio.gather(receive_msg(), send_audio())
+                    # 发送最后一帧 (End of Stream)
+                    # Even for last frame, demo sends parameters
+                    data = {
+                        "header": {
+                            "status": 2,
+                            "app_id": self.app_id
+                        },
+                        "parameter": {
+                            "iat": self.iat_params
+                        },
+                        "payload": {
+                            "audio": {
+                                "audio": "", # Empty audio for last frame
+                                "sample_rate": 16000,
+                                "encoding": "raw"
+                            }
+                        }
+                    }
+                    print("Sent last frame (status 2)", flush=True)
+                    await ws.send(json.dumps(data))
+
+                except Exception as e:
+                    print(f"Send error: {e}", flush=True)
+                
+                # Wait for receiver to finish
+                await receive_task
                 
         except Exception as e:
-            print(f"ASR Connection failed: {e}", flush=True)
+            print(f"ASR Connection error: {e}", flush=True)
             await callback({"error": str(e)})
+

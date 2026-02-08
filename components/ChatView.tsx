@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Brain, Database, ChevronDown, ChevronRight, Globe } from 'lucide-react';
+import { Send, Brain, Database, ChevronDown, ChevronRight, Globe, Mic, MicOff } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import OntologySphere from './OntologySphere';
@@ -49,6 +49,152 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
   const [selectedModel, setSelectedModel] = useState<string>('glm-4-flash');
   const [sphereStatus, setSphereStatus] = useState<'idle' | 'thinking' | 'working'>('idle');
   const messagesEndRef = useRef<HTMLDivElement>(null); 
+  
+  // ASR State
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<any>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+
+  const startRecording = async () => {
+    // Check if browser supports mediaDevices
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert(
+            "无法访问麦克风：浏览器安全策略限制。\n\n" +
+            "1. 请确保您正在使用 HTTPS 协议访问 (https://...)\n" +
+            "2. 如果是自签名证书，请允许浏览器的安全警告。\n" +
+            "3. 如果必须使用 HTTP，请在浏览器地址栏输入 chrome://flags/#unsafely-treat-insecure-origin-as-secure \n" +
+            "   将您的访问地址填入并设为 Enabled，然后重启浏览器。"
+        );
+        return;
+    }
+
+    try {
+      // 1. Get user media first
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      // 2. Create AudioContext IMMEDIATELY after user interaction/permission
+      // This is critical for Autoplay Policy
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      const audioContext = new AudioContextClass({ sampleRate: 16000 });
+
+      // 3. Connect WebSocket
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      // Use the same host/port as the frontend (Vite proxy will handle it)
+      let wsUrl = `${wsProtocol}//${window.location.host}/api/asr`;
+      
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log("ASR WebSocket Connected");
+        setIsRecording(true);
+        // Pass the already created audioContext
+        processAudio(stream, ws, audioContext);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.text) {
+               setInputValue(prev => prev + data.text);
+          }
+          if (data.error) {
+              console.error(data.error);
+              alert(`识别错误: ${data.error}`);
+              stopRecording();
+          }
+        } catch (e) {
+          console.error("Error parsing ASR message:", e);
+        }
+      };
+      
+      ws.onerror = (e) => {
+          console.error("WebSocket error", e);
+          alert("连接语音服务失败，请检查网络或稍后重试。");
+          stopRecording();
+      }
+
+      ws.onclose = () => {
+          console.log("WebSocket closed");
+          setIsRecording(false);
+      }
+
+    } catch (err: any) {
+      console.error('Error accessing microphone:', err);
+      // Detailed error handling
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          alert("无法访问麦克风：权限被拒绝。请在浏览器地址栏点击锁形图标，允许使用麦克风。");
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+          alert("无法访问麦克风：未找到麦克风设备。");
+      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+          alert("无法访问麦克风：麦克风可能被其他应用占用。");
+      } else if (err.name === 'OverconstrainedError') {
+          alert("无法访问麦克风：请求的麦克风参数不满足要求。");
+      } else if (err.name === 'SecurityError' || err.name === 'SecureContextRequiredError') {
+         alert("无法访问麦克风：安全策略限制。请确保使用 localhost 或 HTTPS 访问。如果使用 IP 访问，浏览器可能因安全原因禁用麦克风。");
+      } else {
+         alert(`无法访问麦克风 (${err.name}): ${err.message}`);
+      }
+    }
+  };
+
+  const processAudio = (stream: MediaStream, ws: WebSocket, audioContext: AudioContext) => {
+      // AudioContext is passed in, not created here
+      const source = audioContext.createMediaStreamSource(stream);
+      // Reduce buffer size to 1024 (approx 64ms) for smoother streaming
+      const processor = audioContext.createScriptProcessor(1024, 1, 1);
+
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+
+      processor.onaudioprocess = (e) => {
+          if (ws.readyState !== WebSocket.OPEN) return;
+          
+          const inputData = e.inputBuffer.getChannelData(0);
+          
+          const buffer = new ArrayBuffer(inputData.length * 2);
+          const outputView = new DataView(buffer);
+          for (let i = 0; i < inputData.length; i++) {
+              let s = Math.max(-1, Math.min(1, inputData[i]));
+              s = s < 0 ? s * 0x8000 : s * 0x7FFF;
+              outputView.setInt16(i * 2, s, true);
+          }
+          ws.send(buffer);
+      };
+
+      mediaRecorderRef.current = { stream, audioContext, processor, source };
+  };
+
+  const stopRecording = () => {
+      if (wsRef.current) {
+          if (wsRef.current.readyState === WebSocket.OPEN) {
+             wsRef.current.send("STOP");
+             // Close after a short delay to allow final results
+             setTimeout(() => {
+                 wsRef.current?.close();
+             }, 500);
+          } else {
+             wsRef.current.close();
+          }
+      }
+      
+      if (mediaRecorderRef.current) {
+          const { stream, audioContext, processor, source } = mediaRecorderRef.current;
+          stream.getTracks().forEach((track: any) => track.stop());
+          processor.disconnect();
+          source.disconnect();
+          audioContext.close();
+      }
+      setIsRecording(false);
+  };
+
+  const toggleRecording = () => {
+      if (isRecording) {
+          stopRecording();
+      } else {
+          startRecording();
+      }
+  };
 
   const hasInteracted = messages.length > 0 || isThinking;
 
@@ -369,6 +515,19 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
                             <Brain size={16} className={isThinking ? 'animate-pulse text-blue-600 dark:text-blue-400' : ''} />
                         </div>
 
+                        {/* Mic Button */}
+                        <button
+                            onClick={toggleRecording}
+                            className={`w-7 h-7 rounded-full flex items-center justify-center transition-all mr-1 ${
+                            isRecording 
+                            ? 'bg-red-500 text-white animate-pulse shadow-lg glow-red' 
+                            : 'text-slate-400 dark:text-slate-600 hover:text-blue-500 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-white/5'
+                            }`}
+                            title={isRecording ? "停止录音" : "开始录音"}
+                        >
+                            {isRecording ? <MicOff size={14} /> : <Mic size={14} />}
+                        </button>
+
                         {/* RAG Toggle */}
                         <button
                             onClick={() => setIsRagEnabled(!isRagEnabled)}
@@ -430,6 +589,7 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
 };
 
 export default ChatView;
+
 
 
 

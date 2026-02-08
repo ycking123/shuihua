@@ -13,9 +13,9 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     print("WebSocket client connected for ASR", flush=True)
     
-    app_id = os.getenv("XUNFEI_APP_ID")
-    api_key = os.getenv("XUNFEI_API_KEY")
-    api_secret = os.getenv("XUNFEI_API_SECRET")
+    app_id = os.getenv("XUNFEI_APP_ID", "b051c86c")
+    api_key = os.getenv("XUNFEI_API_KEY", "2ef25a95a8608cde7cb75275f07fc5c4")
+    api_secret = os.getenv("XUNFEI_API_SECRET", "NDlmYjdmYmNhZDMyNWUyZDg0Mjk0MzI5")
     
     if not app_id or not api_key:
         print("XUNFEI credentials missing (AppID/APIKey)", flush=True)
@@ -73,3 +73,4 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         # 等待 ASR 任务结束
         await asr_task
+

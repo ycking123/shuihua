@@ -12,7 +12,7 @@ load_dotenv(dotenv_path=BASE_DIR / ".env")
 
 # Import routers
 # Using relative imports as we are running as a module (python -m server.main)
-from .routers import asr, chat, todos, auth
+from .routers import asr, chat, todos, auth, dashboard
 from .database import engine, Base, init_db
 
 @asynccontextmanager
@@ -57,6 +57,7 @@ app.include_router(asr.router)
 app.include_router(chat.router)
 app.include_router(todos.router)
 app.include_router(auth.router)
+app.include_router(dashboard.router)
 
 @app.get("/api/health")
 def read_root():
@@ -68,5 +69,6 @@ def read_root():
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
