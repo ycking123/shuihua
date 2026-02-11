@@ -434,18 +434,18 @@ DROP TABLE IF EXISTS `shjl_analysis_reports`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `shjl_analysis_reports` (
-  `id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `source_type` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `source_id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `title` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `detailed_report` longtext COLLATE utf8mb4_unicode_ci,
-  `conclusion_cards` json DEFAULT NULL,
-  `mind_map_data` json DEFAULT NULL,
-  `raw_response` json DEFAULT NULL,
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '主键ID',
+  `source_type` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '来源类型',
+  `source_id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '来源ID',
+  `title` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '报告标题',
+  `detailed_report` longtext COLLATE utf8mb4_unicode_ci COMMENT '详细报告内容',
+  `conclusion_cards` json DEFAULT NULL COMMENT '结论卡片(JSON)',
+  `mind_map_data` json DEFAULT NULL COMMENT '思维导图数据(JSON)',
+  `raw_response` json DEFAULT NULL COMMENT '原始响应数据(JSON)',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
   KEY `idx_analysis_source` (`source_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='分析报告表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -465,19 +465,19 @@ DROP TABLE IF EXISTS `shjl_audit_logs`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `shjl_audit_logs` (
-  `id` bigint NOT NULL AUTO_INCREMENT,
-  `user_id` char(36) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `action` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `resource_type` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `resource_id` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `ip_address` varchar(45) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `user_agent` text COLLATE utf8mb4_unicode_ci,
-  `details` json DEFAULT NULL,
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `user_id` char(36) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '用户ID',
+  `action` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '操作动作',
+  `resource_type` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '资源类型',
+  `resource_id` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '资源ID',
+  `ip_address` varchar(45) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'IP地址',
+  `user_agent` text COLLATE utf8mb4_unicode_ci COMMENT '用户代理',
+  `details` json DEFAULT NULL COMMENT '详情(JSON)',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
   KEY `idx_audit_user_action` (`user_id`,`action`),
   CONSTRAINT `shjl_audit_logs_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `shjl_users` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='审计日志表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -497,17 +497,17 @@ DROP TABLE IF EXISTS `shjl_chat_messages`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `shjl_chat_messages` (
-  `id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `session_id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `role` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `content` longtext COLLATE utf8mb4_unicode_ci NOT NULL,
-  `message_type` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT 'text',
-  `meta_data` json DEFAULT NULL,
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '主键ID',
+  `session_id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '会话ID',
+  `role` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '角色(user/assistant/system)',
+  `content` longtext COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '消息内容',
+  `message_type` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT 'text' COMMENT '消息类型',
+  `meta_data` json DEFAULT NULL COMMENT '元数据(JSON)',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
   KEY `idx_messages_session_created` (`session_id`,`created_at`),
   CONSTRAINT `shjl_chat_messages_ibfk_1` FOREIGN KEY (`session_id`) REFERENCES `shjl_chat_sessions` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='聊天消息表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -528,18 +528,18 @@ DROP TABLE IF EXISTS `shjl_chat_sessions`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `shjl_chat_sessions` (
-  `id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `user_id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `title` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `summary` text COLLATE utf8mb4_unicode_ci,
-  `is_pinned` tinyint(1) DEFAULT '0',
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `is_deleted` tinyint(1) DEFAULT '0',
+  `id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '主键ID',
+  `user_id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '用户ID',
+  `title` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '会话标题',
+  `summary` text COLLATE utf8mb4_unicode_ci COMMENT '会话摘要',
+  `is_pinned` tinyint(1) DEFAULT '0' COMMENT '是否置顶',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `is_deleted` tinyint(1) DEFAULT '0' COMMENT '是否删除',
   PRIMARY KEY (`id`),
   KEY `user_id` (`user_id`),
   CONSTRAINT `shjl_chat_sessions_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `shjl_users` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='聊天会话表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -560,18 +560,18 @@ DROP TABLE IF EXISTS `shjl_knowledge_documents`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `shjl_knowledge_documents` (
-  `id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `title` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `content` longtext COLLATE utf8mb4_unicode_ci NOT NULL,
-  `source_url` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `file_type` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `created_by` char(36) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '主键ID',
+  `title` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '文档标题',
+  `content` longtext COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '文档内容',
+  `source_url` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '来源URL',
+  `file_type` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '文件类型',
+  `created_by` char(36) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '创建人ID',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   KEY `created_by` (`created_by`),
   CONSTRAINT `shjl_knowledge_documents_ibfk_1` FOREIGN KEY (`created_by`) REFERENCES `shjl_users` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='知识库文档表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -591,16 +591,16 @@ DROP TABLE IF EXISTS `shjl_meeting_attendees`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `shjl_meeting_attendees` (
-  `meeting_id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `user_id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `external_email` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `external_name` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `status` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT 'pending',
+  `meeting_id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '会议ID',
+  `user_id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '用户ID',
+  `external_email` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '外部邮箱',
+  `external_name` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '外部姓名',
+  `status` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT 'pending' COMMENT '状态',
   PRIMARY KEY (`meeting_id`,`user_id`),
   KEY `user_id` (`user_id`),
   CONSTRAINT `shjl_meeting_attendees_ibfk_1` FOREIGN KEY (`meeting_id`) REFERENCES `shjl_meetings` (`id`),
   CONSTRAINT `shjl_meeting_attendees_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `shjl_users` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='会议参会人表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -620,22 +620,22 @@ DROP TABLE IF EXISTS `shjl_meetings`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `shjl_meetings` (
-  `id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `organizer_id` char(36) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `title` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `description` text COLLATE utf8mb4_unicode_ci,
-  `start_time` datetime NOT NULL,
-  `end_time` datetime NOT NULL,
-  `location` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `wecom_schedule_id` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `summary` text COLLATE utf8mb4_unicode_ci,
-  `transcript` longtext COLLATE utf8mb4_unicode_ci,
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '主键ID',
+  `organizer_id` char(36) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '组织者ID',
+  `title` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '会议标题',
+  `description` text COLLATE utf8mb4_unicode_ci COMMENT '会议描述',
+  `start_time` datetime NOT NULL COMMENT '开始时间',
+  `end_time` datetime NOT NULL COMMENT '结束时间',
+  `location` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '会议地点',
+  `wecom_schedule_id` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '企业微信日程ID',
+  `summary` text COLLATE utf8mb4_unicode_ci COMMENT '会议纪要/总结',
+  `transcript` longtext COLLATE utf8mb4_unicode_ci COMMENT '会议转写记录',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   KEY `organizer_id` (`organizer_id`),
   CONSTRAINT `shjl_meetings_ibfk_1` FOREIGN KEY (`organizer_id`) REFERENCES `shjl_users` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='会议表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -656,19 +656,19 @@ DROP TABLE IF EXISTS `shjl_ontology_edges`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `shjl_ontology_edges` (
-  `id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `source_node_id` char(36) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `target_node_id` char(36) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `relation_type` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `weight` float DEFAULT '1',
-  `properties` json DEFAULT NULL,
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '主键ID',
+  `source_node_id` char(36) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '源节点ID',
+  `target_node_id` char(36) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '目标节点ID',
+  `relation_type` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '关系类型',
+  `weight` float DEFAULT '1' COMMENT '权重',
+  `properties` json DEFAULT NULL COMMENT '属性(JSON)',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
   KEY `idx_edges_source` (`source_node_id`),
   KEY `idx_edges_target` (`target_node_id`),
   CONSTRAINT `shjl_ontology_edges_ibfk_1` FOREIGN KEY (`source_node_id`) REFERENCES `shjl_ontology_nodes` (`id`),
   CONSTRAINT `shjl_ontology_edges_ibfk_2` FOREIGN KEY (`target_node_id`) REFERENCES `shjl_ontology_nodes` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='本体关系边表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -688,14 +688,14 @@ DROP TABLE IF EXISTS `shjl_ontology_nodes`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `shjl_ontology_nodes` (
-  `id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `label` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `type` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `properties` json DEFAULT NULL,
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '主键ID',
+  `label` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '标签/名称',
+  `type` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '类型',
+  `properties` json DEFAULT NULL COMMENT '属性(JSON)',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='本体节点表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -715,15 +715,15 @@ DROP TABLE IF EXISTS `shjl_roles`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `shjl_roles` (
-  `id` int NOT NULL AUTO_INCREMENT,
-  `name` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `description` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `permissions` json DEFAULT NULL,
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `id` int NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `name` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '角色名称',
+  `description` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '描述',
+  `permissions` json DEFAULT NULL COMMENT '权限列表(JSON)',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `name` (`name`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='角色表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -743,30 +743,30 @@ DROP TABLE IF EXISTS `shjl_todos`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `shjl_todos` (
-  `id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `user_id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `title` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `content` longtext COLLATE utf8mb4_unicode_ci,
-  `type` enum('task','email','approval','meeting','chat_record') COLLATE utf8mb4_unicode_ci DEFAULT 'task',
-  `priority` enum('urgent','high','normal','low') COLLATE utf8mb4_unicode_ci DEFAULT 'normal',
-  `status` enum('pending','in_progress','completed','archived') COLLATE utf8mb4_unicode_ci DEFAULT 'pending',
-  `sender` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `source_origin` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `source_message_id` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `ai_summary` text COLLATE utf8mb4_unicode_ci,
-  `ai_action` text COLLATE utf8mb4_unicode_ci,
-  `is_user_task` tinyint(1) DEFAULT '0',
-  `text_type` int DEFAULT '0',
-  `due_at` datetime DEFAULT NULL,
-  `completed_at` datetime DEFAULT NULL,
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `is_deleted` tinyint(1) DEFAULT '0',
+  `id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '主键ID',
+  `user_id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '用户ID',
+  `title` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '标题',
+  `content` longtext COLLATE utf8mb4_unicode_ci COMMENT '内容',
+  `type` enum('task','email','approval','meeting','chat_record') COLLATE utf8mb4_unicode_ci DEFAULT 'task' COMMENT '类型',
+  `priority` enum('urgent','high','normal','low') COLLATE utf8mb4_unicode_ci DEFAULT 'normal' COMMENT '优先级',
+  `status` enum('pending','in_progress','completed','archived') COLLATE utf8mb4_unicode_ci DEFAULT 'pending' COMMENT '状态',
+  `sender` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '发送人',
+  `source_origin` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '来源',
+  `source_message_id` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '来源消息ID',
+  `ai_summary` text COLLATE utf8mb4_unicode_ci COMMENT 'AI摘要',
+  `ai_action` text COLLATE utf8mb4_unicode_ci COMMENT 'AI建议动作',
+  `is_user_task` tinyint(1) DEFAULT '0' COMMENT '是否用户任务',
+  `text_type` int DEFAULT '0' COMMENT '文本类型',
+  `due_at` datetime DEFAULT NULL COMMENT '截止时间',
+  `completed_at` datetime DEFAULT NULL COMMENT '完成时间',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `is_deleted` tinyint(1) DEFAULT '0' COMMENT '是否删除',
   PRIMARY KEY (`id`),
   KEY `idx_todos_user_status` (`user_id`,`status`),
   KEY `idx_todos_created_at` (`created_at` DESC),
   CONSTRAINT `shjl_todos_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `shjl_users` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='待办事项表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -787,19 +787,19 @@ DROP TABLE IF EXISTS `shjl_users`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `shjl_users` (
-  `id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `username` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `email` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `password_hash` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `wecom_userid` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `full_name` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `avatar_url` text COLLATE utf8mb4_unicode_ci,
-  `role_id` int DEFAULT NULL,
-  `is_active` tinyint(1) DEFAULT '1',
-  `last_login_at` datetime DEFAULT NULL,
-  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `is_deleted` tinyint(1) DEFAULT '0',
+  `id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '主键ID',
+  `username` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '用户名',
+  `email` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '邮箱',
+  `password_hash` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '密码哈希',
+  `wecom_userid` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '企业微信UserID',
+  `full_name` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '全名',
+  `avatar_url` text COLLATE utf8mb4_unicode_ci COMMENT '头像URL',
+  `role_id` int DEFAULT NULL COMMENT '角色ID',
+  `is_active` tinyint(1) DEFAULT '1' COMMENT '是否激活',
+  `last_login_at` datetime DEFAULT NULL COMMENT '最后登录时间',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `is_deleted` tinyint(1) DEFAULT '0' COMMENT '是否删除',
   PRIMARY KEY (`id`),
   UNIQUE KEY `username` (`username`),
   UNIQUE KEY `email` (`email`),
@@ -808,7 +808,7 @@ CREATE TABLE `shjl_users` (
   KEY `idx_users_wecom_userid` (`wecom_userid`),
   KEY `idx_users_email` (`email`),
   CONSTRAINT `shjl_users_ibfk_1` FOREIGN KEY (`role_id`) REFERENCES `shjl_roles` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --

@@ -311,7 +311,7 @@ def send_wecom_text(user_id: str, content: str, chat_id: str = None) -> bool:
         logger.error(f"❌ 企微消息发送失败: {e}")
         return False
 
-def save_meeting_data_to_db(crawl_result, system_user_id: Optional[str]):
+def save_meeting_data_to_db(crawl_result, system_user_id: Optional[str], meeting_url: str = ""):
     """
     Save crawled meeting data to database directly.
     """
@@ -326,7 +326,7 @@ def save_meeting_data_to_db(crawl_result, system_user_id: Optional[str]):
             title=clean_text(crawl_result.get("title", "会议纪要")),
             start_time=datetime.now(),
             end_time=datetime.now(),
-            location="腾讯会议",
+            location=meeting_url or "腾讯会议",
             summary=clean_text(crawl_result.get("summary", "")),
             transcript=clean_text(crawl_result.get("transcript", "")),
             created_at=datetime.now(),
@@ -334,7 +334,7 @@ def save_meeting_data_to_db(crawl_result, system_user_id: Optional[str]):
         )
         db.add(new_meeting)
         
-        # 2. Save Todos
+        # 2. Process Todos
         extracted_todos = crawl_result.get("todos", [])
         # Parse if string
         if isinstance(extracted_todos, str):
@@ -349,7 +349,9 @@ def save_meeting_data_to_db(crawl_result, system_user_id: Optional[str]):
         
         count = 0
         if extracted_todos and isinstance(extracted_todos, list):
-            for t in extracted_todos:
+            # Combine all todos into one content string
+            todo_items_str = []
+            for idx, t in enumerate(extracted_todos):
                 # Handle if t is just a string
                 if isinstance(t, str):
                     t = {
@@ -359,52 +361,41 @@ def save_meeting_data_to_db(crawl_result, system_user_id: Optional[str]):
                         "assignee": "待定"
                     }
                 
-                # Map priority to allowed values
-                raw_priority = t.get("priority", "normal").lower()
-                if "high" in raw_priority or "urgent" in raw_priority:
-                    safe_priority = "high"
-                elif "low" in raw_priority:
-                    safe_priority = "low"
-                else:
-                    safe_priority = "normal"
-
-                new_todo = Todo(
+                # Format each todo item
+                item_desc = t.get('description', '')
+                assignee = t.get('assignee', '待定')
+                due_date = t.get('due_date', '未指定')
+                title = t.get('title', '未命名任务')
+                
+                todo_items_str.append(f"{idx+1}. {title}\n   - 详情: {item_desc}\n   - 责任人: {assignee}\n   - 截止: {due_date}")
+                count += 1
+            
+            if count > 0:
+                combined_content = "\n".join(todo_items_str)
+                
+                # Create ONE meeting todo item
+                meeting_todo = Todo(
                     id=str(uuid.uuid4()),
                     user_id=user_id,
-                    title=clean_text(t.get("title", "未命名任务")[:255]),
-                    content=clean_text(f"详情: {t.get('description', '')}\n责任人: {t.get('assignee', '')}"),
-                    type="task",
-                    priority=safe_priority,
+                    title=clean_text(new_meeting.title), # Use meeting title as todo title
+                    content=clean_text(f"【会议待办】\n{combined_content}"),
+                    type="meeting", # Special type for meeting todos
+                    priority="high",
                     status="pending",
-                    sender="会议纪要助手",
-                    ai_summary=f"截止: {t.get('due_date', '无')}",
+                    sender="会议助手",
                     source_origin="meeting_minutes",
                     source_message_id=new_meeting.id, # Link to meeting
                     created_at=datetime.now(),
                     updated_at=datetime.now()
                 )
-                db.add(new_todo)
-                count += 1
-                
-        # 3. Save Meeting Record Todo
-        meeting_todo = Todo(
-            id=str(uuid.uuid4()),
-            user_id=user_id,
-            title=clean_text(new_meeting.title),
-            content=clean_text(f"【会议纪要】\n{new_meeting.summary[:500]}...\n\n已提取待办: {count}条"),
-            type="meeting",
-            priority="high",
-            status="pending", # Keep as pending to show in active list
-            sender="会议助手",
-            source_origin="meeting_minutes",
-            source_message_id=new_meeting.id,
-            created_at=datetime.now(),
-            updated_at=datetime.now()
-        )
-        db.add(meeting_todo)
+                db.add(meeting_todo)
+                logger.info(f"✅ [DB] 已创建合并后的会议待办，包含 {count} 个子项")
+
+        # If no todos, we don't create any Todo item. 
+        # The meeting record itself is saved in step 1.
         
         db.commit()
-        logger.info(f"✅ [DB] 已保存会议纪要及 {count} 条待办到数据库")
+        logger.info(f"✅ [DB] 已保存会议纪要到数据库")
         return count
         
     except Exception as e:
@@ -723,7 +714,7 @@ def process_text_sync(text_content: str, user_id: str = None, chat_id: str = Non
             crawl_result = crawl_meeting_minutes(meeting_url, WECOM_MEETING_COOKIES)
             
             if crawl_result:
-                saved_count = save_meeting_data_to_db(crawl_result, system_user_id)
+                saved_count = save_meeting_data_to_db(crawl_result, system_user_id, meeting_url=meeting_url)
                 logger.info(f"✅ 会议链接处理完成，已存入数据库 (待办数: {saved_count})")
                 return # 结束处理
             else:

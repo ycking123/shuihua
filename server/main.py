@@ -12,7 +12,7 @@ load_dotenv(dotenv_path=BASE_DIR / ".env")
 
 # Import routers
 # Using relative imports as we are running as a module (python -m server.main)
-from .routers import asr, chat, todos, auth, dashboard
+from .routers import asr, chat, todos, auth, dashboard, meetings
 from .database import engine, Base, init_db
 
 @asynccontextmanager
@@ -58,6 +58,7 @@ app.include_router(chat.router)
 app.include_router(todos.router)
 app.include_router(auth.router)
 app.include_router(dashboard.router)
+app.include_router(meetings.router)
 
 @app.get("/api/health")
 def read_root():

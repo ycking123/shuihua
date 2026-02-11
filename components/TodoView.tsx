@@ -5,12 +5,12 @@ import {
   CheckSquare, Sparkles, ChevronLeft, Search, 
   Layers, Inbox, Coffee, ShieldCheck, Trash2,
   Target, ArrowRight, PenLine, User, AlertCircle, Clock, Info,
-  MessageSquare
+  MessageSquare, FileText, Calendar, Link as LinkIcon, X
 } from 'lucide-react';
 import { TODOS_DATA } from '../constants';
 import { ViewType } from '../types';
 
-type TodoCategory = 'all' | 'email' | 'meeting' | 'approval' | 'chat_record';
+type TodoCategory = 'all' | 'email' | 'meeting' | 'approval' | 'chat_record' | 'meeting_minutes';
 type PriorityType = 'urgent' | 'high' | 'normal';
 
 interface TaskItem {
@@ -26,6 +26,16 @@ interface TaskItem {
   aiAction?: string;
   content?: string;
   isUserTask?: boolean;
+}
+
+interface MeetingItem {
+  id: string;
+  title: string;
+  start_time: string;
+  location: string;
+  summary: string;
+  transcript: string;
+  organizer_id?: string;
 }
 
 interface TodoViewProps {
@@ -48,24 +58,26 @@ const PriorityTag: React.FC<{ priority: string }> = ({ priority }) => {
 
 const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
   const [selectedItem, setSelectedItem] = useState<any | null>(null);
+  const [selectedMeeting, setSelectedMeeting] = useState<MeetingItem | null>(null); // New state for meeting detail
   const [activeCategory, setActiveCategory] = useState<TodoCategory>('all');
   const [userTasks, setUserTasks] = useState<TaskItem[]>([]);
   const [backendTasks, setBackendTasks] = useState<TaskItem[]>([]); // New state for backend tasks
+  const [meetingMinutes, setMeetingMinutes] = useState<MeetingItem[]>([]); // New state for meetings
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState<PriorityType>('high');
   const [isInputFocused, setIsInputFocused] = useState(false);
 
-  // Fetch tasks from backend on mount
+  // Fetch tasks and meetings from backend on mount
   React.useEffect(() => {
-    const fetchTodos = async () => {
+    const fetchData = async () => {
       try {
         // Use hostname to adapt to both local and server environments
         const hostname = window.location.hostname;
-        let backendUrl = `http://${window.location.hostname}:8000/api/todos`;
+        let baseUrl = `http://${hostname}:8000/api`;
         
         // If local development (npm run dev), use proxy
         if (import.meta.env.DEV) {
-             backendUrl = '/api/todos';
+             baseUrl = '/api';
         }
 
         // Add Authorization header if token exists
@@ -77,22 +89,27 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
             headers['Authorization'] = `Bearer ${token}`;
         }
 
-        const res = await fetch(backendUrl, { headers });
-        if (res.ok) {
-          const data = await res.json();
+        // Fetch Todos
+        const resTodos = await fetch(`${baseUrl}/todos`, { headers });
+        if (resTodos.ok) {
+          const data = await resTodos.json();
           setBackendTasks(data);
-        } else {
-            console.error(`Fetch failed with status: ${res.status}`);
-            // Do not throw, just log. 
         }
+
+        // Fetch Meetings
+        const resMeetings = await fetch(`${baseUrl}/meetings`, { headers });
+        if (resMeetings.ok) {
+          const data = await resMeetings.json();
+          setMeetingMinutes(data);
+        }
+
       } catch (e: any) {
-        console.error("Failed to fetch todos:", e);
-        // Maybe show a toast or small error indicator in UI, but for now just console
+        console.error("Failed to fetch data:", e);
       }
     };
-    fetchTodos();
+    fetchData();
     // Poll every 5 seconds for updates
-    const interval = setInterval(fetchTodos, 5000);
+    const interval = setInterval(fetchData, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -102,9 +119,11 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
     { id: 'meeting', label: '会议', icon: Coffee },
     { id: 'approval', label: '审批', icon: ShieldCheck },
     { id: 'chat_record', label: '其他', icon: MessageSquare },
+    { id: 'meeting_minutes', label: '会议纪要', icon: FileText },
   ];
 
   const getCount = (id: string) => {
+    if (id === 'meeting_minutes') return meetingMinutes.length;
     const all = [...TODOS_DATA, ...userTasks, ...backendTasks];
     return all.filter(task => {
       // Determine if task is pending
@@ -269,7 +288,41 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
           </div>
         )}
 
-        {/* 任务列表 */}
+        {/* 任务列表 & 会议纪要列表 */}
+        {activeCategory === 'meeting_minutes' ? (
+          <div className="space-y-3">
+            {meetingMinutes.map((item) => (
+              <div 
+                key={item.id} 
+                onClick={() => setSelectedMeeting(item)}
+                className="glass-card p-4 rounded-[1.5rem] bg-white/60 dark:bg-white/5 border-slate-100 dark:border-white/5 transition-all relative group overflow-hidden shadow-sm hover:shadow-md active:scale-[0.98]"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0">
+                    <FileText size={18} className="text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className="text-[9px] font-mono-prec text-slate-400 dark:text-slate-600 uppercase tracking-tighter truncate">
+                        {new Date(item.start_time).toLocaleString()}
+                      </span>
+                    </div>
+                    <h3 className="text-[13px] font-bold truncate text-slate-800 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-blue-400">
+                      {item.title}
+                    </h3>
+                  </div>
+                  <ChevronLeft className="rotate-180 text-slate-300 dark:text-slate-700 group-hover:text-blue-600 dark:group-hover:text-blue-500 transition-colors" size={12} />
+                </div>
+              </div>
+            ))}
+            {meetingMinutes.length === 0 && (
+              <div className="h-64 flex flex-col items-center justify-center opacity-10">
+                <FileText size={48} className="text-slate-900 dark:text-slate-600 mb-4" />
+                <span className="text-[10px] font-mono uppercase tracking-[0.2em]">NO_MEETINGS</span>
+              </div>
+            )}
+          </div>
+        ) : (
         <div className="space-y-3">
           {filteredTasks.map((item) => (
             <div 
@@ -328,6 +381,7 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
             </div>
           )}
         </div>
+        )}
       </div>
 
       {/* 任务详情抽屉 */}
@@ -389,6 +443,68 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
                     {selectedItem.content}
                 </div>
              </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* 会议详情抽屉 */}
+      {selectedMeeting && createPortal(
+        <div className="fixed inset-0 z-[200] bg-white dark:bg-black animate-in slide-in-from-right duration-300 flex flex-col transition-colors duration-500">
+          <div className="shrink-0 bg-white/95 dark:bg-black/95 backdrop-blur-xl border-b border-slate-200 dark:border-white/5 p-4 flex items-center justify-between z-50 shadow-sm safe-area-top">
+            <button 
+              onClick={() => setSelectedMeeting(null)} 
+              className="px-4 py-2 bg-slate-100 dark:bg-white/10 rounded-full text-slate-900 dark:text-white flex items-center gap-2 active:scale-90 transition-all hover:bg-slate-200 dark:hover:bg-white/20"
+            >
+                <ChevronLeft size={18} />
+                <span className="text-xs font-bold uppercase tracking-widest">返回列表</span>
+            </button>
+            <div className="text-[9px] font-bold text-slate-400 dark:text-slate-600 tracking-[0.3em] uppercase">会议纪要详情</div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-6 space-y-8 pb-32 safe-area-bottom">
+             <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono-prec text-blue-600 dark:text-blue-500">{new Date(selectedMeeting.start_time).toLocaleString()}</span>
+                </div>
+                <h1 className="text-2xl font-bold leading-tight text-slate-900 dark:text-white">{selectedMeeting.title}</h1>
+                
+                {selectedMeeting.location && (selectedMeeting.location.startsWith('http') ? (
+                    <a href={selectedMeeting.location} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-blue-600 hover:underline">
+                        <LinkIcon size={14} />
+                        <span className="text-sm truncate">{selectedMeeting.location}</span>
+                    </a>
+                ) : (
+                    <div className="flex items-center gap-2 text-slate-500">
+                        <Target size={14} />
+                        <span className="text-sm">{selectedMeeting.location}</span>
+                    </div>
+                ))}
+             </div>
+
+             <div className="space-y-4">
+                <div className="text-[10px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest flex items-center gap-2">
+                    <div className="h-px flex-1 bg-slate-200 dark:bg-white/5"></div>
+                    纪要摘要
+                    <div className="h-px flex-1 bg-slate-200 dark:bg-white/5"></div>
+                </div>
+                <div className="text-slate-600 dark:text-slate-300 text-[15px] leading-relaxed font-light whitespace-pre-wrap px-2 bg-slate-50 dark:bg-white/5 p-4 rounded-xl">
+                    {selectedMeeting.summary || "暂无摘要"}
+                </div>
+             </div>
+             
+             {selectedMeeting.transcript && (
+                 <div className="space-y-4">
+                    <div className="text-[10px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest flex items-center gap-2">
+                        <div className="h-px flex-1 bg-slate-200 dark:bg-white/5"></div>
+                        详细记录
+                        <div className="h-px flex-1 bg-slate-200 dark:bg-white/5"></div>
+                    </div>
+                    <div className="text-slate-600 dark:text-slate-300 text-[14px] leading-relaxed font-light whitespace-pre-wrap px-2">
+                        {selectedMeeting.transcript}
+                    </div>
+                 </div>
+             )}
           </div>
         </div>,
         document.body
