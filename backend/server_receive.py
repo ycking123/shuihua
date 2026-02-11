@@ -900,6 +900,30 @@ async def trigger_wecom_flow_test(user_id: str = "test_admin"):
 
 # --- WeChat Callback Routes ---
 
+@app.get("/wecom/smartbot/callback")
+async def smartbot_verify(
+    msg_signature: str = Query(...),
+    timestamp: str = Query(...),
+    nonce: str = Query(...),
+    echostr: str = Query(...)
+):
+    """
+    智能机器人回调验证接口 (GET)
+    文档: https://developer.work.weixin.qq.com/document/path/100719
+    """
+    if not crypto:
+        raise HTTPException(status_code=500, detail="WeChatCrypto not initialized")
+        
+    try:
+        echo_str = crypto.check_signature(msg_signature, timestamp, nonce, echostr)
+        return Response(content=echo_str, media_type="text/plain")
+    except InvalidSignatureException:
+        logger.error("❌ 签名验证失败")
+        raise HTTPException(status_code=403, detail="Invalid Signature")
+    except Exception as e:
+        logger.error(f"❌ 验证过程异常: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
 @app.post("/wecom/smartbot/callback")
 async def smartbot_receive(
     request: Request,
