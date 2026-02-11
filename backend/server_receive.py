@@ -263,15 +263,33 @@ def clean_text(text):
     if not text: return ""
     return "".join(c for c in text if len(c.encode('utf-8')) <= 3)
 
-def send_wecom_text(user_id: str, content: str) -> bool:
+def send_wecom_text(user_id: str, content: str, chat_id: str = None) -> bool:
     """
     主动向企微用户发送文本消息
-    优先使用企业微信 Work 接口签名 (需要 agent_id)，否则尝试通用 send_text
+    如果提供了 chat_id，则发送到群聊 (AppChat)
+    否则发送给指定用户 (Agent Message)
     """
     try:
         if not wechat_client:
             logger.warning("⚠️ WeChatClient 未初始化，无法主动发送消息")
             return False
+            
+        # 1. 优先尝试发送到群聊
+        if chat_id:
+            try:
+                if hasattr(wechat_client, "appchat"):
+                    wechat_client.appchat.send_text(chat_id, content)
+                    logger.info(f"📨 已向群聊 {chat_id} 发送消息")
+                    return True
+                else:
+                    logger.warning("⚠️ WeChatClient 不支持 appchat API")
+            except Exception as e:
+                logger.error(f"❌ 群聊消息发送失败: {e}")
+                # 如果群发失败，是否降级发给个人？
+                # 暂时选择不降级，避免打扰，或者用户可以看日志
+                return False
+
+        # 2. 发送给个人
         agent_id = os.getenv("WECOM_AGENT_ID")
         if hasattr(wechat_client, "message"):
             if agent_id:
@@ -563,21 +581,26 @@ def analyze_and_save_image(image_content: bytes, user_id: str, source_origin: st
     except Exception as e:
         logger.error(f"❌ 图片通用处理流程异常: {e}")
 
-def process_image_url_sync(image_url: str, user_id: str = None):
+def process_image_url_sync(image_url: str, user_id: str = None, chat_id: str = None):
     """
     Synchronous function to process image from URL
     """
-    logger.info(f"🔄 开始处理图片 URL: {image_url} from User: {user_id}")
+    logger.info(f"🔄 开始处理图片 URL: {image_url} from User: {user_id} (Chat: {chat_id})")
     try:
         response = requests.get(image_url, timeout=30)
         response.raise_for_status()
         image_content = response.content
         
         analyze_and_save_image(image_content, user_id, source_origin="wecom_smartbot_image")
+        # TODO: Send completion notification if needed? 
+        # For now, analyze_and_save_image doesn't return result summary easily.
+        # But we can add a simple "Done" message.
+        send_wecom_text(user_id, "图片已接收并开始分析生成待办...", chat_id=chat_id)
+
     except Exception as e:
         logger.error(f"❌ 图片 URL 下载或处理失败: {e}")
 
-def process_image_sync(media_id: str, user_id: str = None):
+def process_image_sync(media_id: str, user_id: str = None, chat_id: str = None):
     """
     Synchronous function to process image, to be run in background task.
     """
@@ -585,7 +608,7 @@ def process_image_sync(media_id: str, user_id: str = None):
         logger.error("❌ 无法处理图片：未初始化 WeChatClient (缺少 WECOM_SECRET)")
         return
 
-    logger.info(f"🔄 开始后台处理图片 MediaId: {media_id} from User: {user_id}")
+    logger.info(f"🔄 开始后台处理图片 MediaId: {media_id} from User: {user_id} (Chat: {chat_id})")
     try:
         # 1. Download image
         response = wechat_client.media.download(media_id)
@@ -593,6 +616,7 @@ def process_image_sync(media_id: str, user_id: str = None):
         
         # 2. Analyze and Save (Refactored)
         analyze_and_save_image(image_content, user_id, source_origin="wecom_image")
+        send_wecom_text(user_id, "图片已接收并开始分析生成待办...", chat_id=chat_id)
 
     except Exception as e:
         logger.error(f"❌ 图片处理流程异常: {e}")
@@ -680,11 +704,11 @@ def create_wecom_meeting(meeting_info, creator_id):
                  
         return False
 
-def process_text_sync(text_content: str, user_id: str = None):
+def process_text_sync(text_content: str, user_id: str = None, chat_id: str = None):
     """
     Synchronous function to process text message
     """
-    logger.info(f"📝 开始后台处理文本消息 from User: {user_id}")
+    logger.info(f"📝 开始后台处理文本消息 from User: {user_id} (Chat: {chat_id})")
     try:
         system_user_id = get_system_user_id(user_id)
 
@@ -725,7 +749,7 @@ def process_text_sync(text_content: str, user_id: str = None):
                 )
                 reply_text = resp.choices[0].message.content.strip()
                 # 主动推送到企微
-                send_wecom_text(user_id, reply_text)
+                send_wecom_text(user_id, reply_text, chat_id=chat_id)
                 logger.info("✅ 闲聊回复已推送至企微")
             except Exception as e:
                 logger.error(f"❌ 闲聊回复生成失败: {e}")
@@ -778,7 +802,7 @@ def process_text_sync(text_content: str, user_id: str = None):
                     logger.info(f"✅ 新增会议待办事项: {todo_item.title}")
                     # 主动推送结构化信息到企微
                     push_text = f"会议已创建：{meeting_info.get('topic','会议')}\n时间：{meeting_time_str}\n参会人：{', '.join(meeting_info.get('attendees', []))}"
-                    send_wecom_text(user_id, push_text)
+                    send_wecom_text(user_id, push_text, chat_id=chat_id)
                     
                 except Exception as e:
                     logger.error(f"❌ 创建会议待办失败: {e}")
@@ -809,21 +833,21 @@ def process_text_sync(text_content: str, user_id: str = None):
                         try:
                             todo_item = TodoItem(**todo_data)
                             todos_store.insert(0, todo_item)
+
                             logger.info(f"✅ 新增文本待办事项: {todo_item.title}")
                         except Exception as e:
                             logger.error(f"❌ 数据模型转换失败: {e}")
                     logger.info(f"✅ 文本分析完成，已添加 {saved_count} 条待办")
-                    # 结构化反馈（只推送概要）
-                    try:
-                        titles = [t.get("title", "") for t in new_todos if isinstance(t, dict)]
-                        push_text = "已创建待办事项：\n" + "\n".join([f"- {t}" for t in titles[:5]])
-                        send_wecom_text(user_id, push_text)
-                    except Exception as e:
-                        logger.warning(f"⚠️ 待办反馈推送失败: {e}")
+                    
+                    # 构造回复消息
+                    reply_text = f"已为您创建 {saved_count} 条待办事项：\n"
+                    for i, t in enumerate(new_todos, 1):
+                        reply_text += f"{i}. {t.get('title')} (截止: {t.get('aiSummary')})\n"
+                    
+                    send_wecom_text(user_id, reply_text, chat_id=chat_id)
                 else:
-                    logger.warning("⚠️ 文本AI分析结果解析为空")
+                    logger.warning("⚠️ AI 分析结果解析为空")
             else:
-                logger.warning("⚠️ 文本AI分析未返回有效 JSON")
                 # 智能兜底：调用大模型生成解释性回复
                 try:
                     messages = [
@@ -836,7 +860,7 @@ def process_text_sync(text_content: str, user_id: str = None):
                         temperature=0.3
                     )
                     reply_text = resp.choices[0].message.content.strip()
-                    send_wecom_text(user_id, reply_text)
+                    send_wecom_text(user_id, reply_text, chat_id=chat_id)
                 except Exception as e:
                     logger.error(f"❌ 智能兜底失败: {e}")
 
@@ -1053,15 +1077,22 @@ async def smartbot_receive(
         # 4. Dispatch Logic
         msg_type = msg_data.get("msgtype")
         user_id = msg_data.get("from", {}).get("userid")
+        # Extract chat_id if available (SmartBot in group)
+        # Structure might be at root or inside specific fields depending on bot type
+        # For SmartBot, sometimes it is in "chat_info": {"chat_id": "..."}
+        chat_id = msg_data.get("chat_info", {}).get("chat_id")
+        # Or maybe "chatid" at root?
+        if not chat_id:
+            chat_id = msg_data.get("chatid")
         
         if msg_type == "text":
             content = msg_data.get("text", {}).get("content", "")
-            background_tasks.add_task(process_text_sync, content, user_id)
+            background_tasks.add_task(process_text_sync, content, user_id, chat_id)
             
         elif msg_type == "image":
             image_url = msg_data.get("image", {}).get("url")
             if image_url:
-                background_tasks.add_task(process_image_url_sync, image_url, user_id)
+                background_tasks.add_task(process_image_url_sync, image_url, user_id, chat_id)
             else:
                 logger.warning("⚠️ 图片消息缺少 URL")
                 
@@ -1073,11 +1104,11 @@ async def smartbot_receive(
                  m_type = item.get("msgtype")
                  if m_type == "text":
                      t_content = item.get("text", {}).get("content", "")
-                     background_tasks.add_task(process_text_sync, t_content, user_id)
+                     background_tasks.add_task(process_text_sync, t_content, user_id, chat_id)
                  elif m_type == "image":
                      img_url = item.get("image", {}).get("url")
                      if img_url:
-                         background_tasks.add_task(process_image_url_sync, img_url, user_id)
+                         background_tasks.add_task(process_image_url_sync, img_url, user_id, chat_id)
         
         else:
             logger.info(f"⚠️ SmartBot 暂不支持的消息类型: {msg_type}")
@@ -1149,17 +1180,30 @@ async def wechat_receive(
     try:
         msg = parse_message(decrypted_xml)
         logger.info(f"📩 收到消息: {msg.type} from {msg.source}")
-
+        
+        # Check for ChatId in XML message (if available in wechatpy parser)
+        # Wechatpy might not map ChatId for standard messages unless it's specific type.
+        # But we can try to access it if it exists in the raw dict or object.
+        chat_id = None
+        # Try to access chat_id if available on msg object
+        if hasattr(msg, 'chat_id'):
+            chat_id = msg.chat_id
+        # Also check common field name for group chat id in callbacks
+        elif hasattr(msg, 'chatid'):
+            chat_id = msg.chatid
+            
         if msg.type == 'text':
             # 启动后台任务处理文本
-            background_tasks.add_task(process_text_sync, msg.content, msg.source)
+            background_tasks.add_task(process_text_sync, msg.content, msg.source, chat_id)
             reply = create_reply("已收到您的文本消息，正在分析生成待办...", msg).render()
         elif msg.type == 'image':
             # 启动后台任务处理图片
-            background_tasks.add_task(process_image_sync, msg.media_id, msg.source)
+            background_tasks.add_task(process_image_sync, msg.media_id, msg.source, chat_id)
             reply = create_reply("正在分析图片内容生成待办事项，请稍候...", msg).render()
         elif msg.type == 'file':
             # 启动后台任务处理文件
+            # process_file_sync needs update too if we want group support there
+            # For now just update text/image as requested
             background_tasks.add_task(process_file_sync, msg.media_id, msg.filename, msg.ext, msg.source)
             reply = create_reply(f"已收到文件【{msg.filename}】，正在提取内容分析...", msg).render()
         else:
