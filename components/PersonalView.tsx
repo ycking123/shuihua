@@ -59,7 +59,7 @@ const PersonalView: React.FC = () => {
     {
       id: 2,
       category: '短期记忆',
-      content: '董事长在最近与人力开会时强调了营销板块需要更多具备AI能力的优秀导购。（近期会议重点）',
+      content: '总裁在最近与人力开会时强调了营销板块需要更多具备AI能力的优秀导购。（近期会议重点）',
       timestamp: '2026-02-06 10:22',
       icon: Clock,
       color: 'orange'
@@ -67,7 +67,7 @@ const PersonalView: React.FC = () => {
     {
       id: 3,
       category: '情景回顾',
-      content: '董事长在历史汇报中更倾向于先看利润质量，而不是销售规模（决策偏好记录）',
+      content: '总裁在历史汇报中更倾向于先看利润质量，而不是销售规模（决策偏好记录）',
       timestamp: '2026-02-03 16:45',
       icon: RotateCcw,
       color: 'purple'
@@ -75,7 +75,7 @@ const PersonalView: React.FC = () => {
     {
       id: 4,
       category: '事实偏好',
-      content: '董事长偏好"结论先行"+"穿透数据"。AI 应先给出一个结论，再提供可点击查看的底层原始数据。',
+      content: '总裁偏好"结论先行"+"穿透数据"。AI 应先给出一个结论，再提供可点击查看的底层原始数据。',
       timestamp: '2026-01-28 11:20',
       icon: BarChart,
       color: 'emerald'
@@ -113,7 +113,7 @@ const PersonalView: React.FC = () => {
           <div className="flex flex-col">
             <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">吴志雄</h2>
             <div className="flex items-center gap-2 mt-1">
-                <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold uppercase tracking-[0.2em]">董事长</span>
+                <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold uppercase tracking-[0.2em]">总裁</span>
                 <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-700"></span>
                 <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">X-ESSENCE-001</span>
             </div>
@@ -276,3 +276,4 @@ const PersonalView: React.FC = () => {
 };
 
 export default PersonalView;
+

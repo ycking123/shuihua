@@ -1,6 +1,6 @@
 
-import React, { useState, useMemo } from 'react';
-import { Sparkles, Wallet, ChevronRight, Target, Radar, Box, Cpu, Zap, Gem, ReceiptText, PieChart, Info, Building2, TrendingUp, Share2, Globe, Brain, ChevronDown, ChevronUp, Users, Activity, GraduationCap, Network, FlaskConical, ArrowRight, RefreshCw, ExternalLink, Search, MessageSquare, Menu, LayoutDashboard, X, FileText, Send, Loader2, Factory, Droplet } from 'lucide-react';
+import React, { useState, useMemo, useRef } from 'react';
+import { Sparkles, Wallet, ChevronRight, Target, Radar, Box, Cpu, Zap, Gem, ReceiptText, PieChart, Info, Building2, TrendingUp, Share2, Globe, Brain, ChevronDown, ChevronUp, Users, Activity, GraduationCap, Network, FlaskConical, ArrowRight, RefreshCw, ExternalLink, Search, MessageSquare, Menu, LayoutDashboard, X, FileText, Send, Loader2, Factory, Droplet, ChevronLeft } from 'lucide-react';
 import { ViewType } from '../types';
 import ShareSheet from './ShareSheet';
 
@@ -400,7 +400,33 @@ const InsightItem: React.FC<{
 );
 };
 
+  const simulatedInsightItems = [
+    {
+        id: 'sim-1',
+        icon: Factory,
+        color: 'emerald',
+        isUrgent: true,
+        text: '吴晓波探访东鹏重庆基地，揭示“智造+绿色”融合新范式',
+        subtext: '竞品动态 (COMPETITOR)',
+        content: '知名财经作家吴晓波深入探访东鹏控股重庆基地，实地调研数字化工厂与绿色生产体系，高度评价其在建陶行业转型升级中的示范作用。',
+        url: 'https://www.dongpeng.net/news/info_9_itemid_18753.html',
+        isSearch: true
+    },
+    {
+        id: 'sim-2',
+        icon: Zap,
+        color: 'cyan',
+        isUrgent: false,
+        text: '分析排泄物，科勒搞了个AI马桶摄像头',
+        subtext: '产品创新 (PRODUCT)',
+        content: '科勒推出搭载AI摄像头的智能马桶，通过图像识别技术分析排泄物特征，为用户提供实时健康监测与预警，引领卫浴产品智能化新方向。',
+        url: 'https://news.qq.com/rain/a/20251028A06E1E00?suid=&media_id=',
+        isSearch: true
+    }
+  ];
+
   const insightItems = [
+    ...simulatedInsightItems,
     { 
         id: 'search-0', 
         icon: Building2, 
@@ -489,8 +515,22 @@ const Dashboard: React.FC<{ onNavigate: (v: ViewType, ctx?: string) => void }> =
   const [strategyItems, setStrategyItems] = useState<any[]>(insightItems);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const scrollToPage = (index: number) => {
+    if (scrollContainerRef.current) {
+      const width = scrollContainerRef.current.clientWidth;
+      scrollContainerRef.current.scrollTo({
+        left: width * index,
+        behavior: 'smooth'
+      });
+      setActivePageIndex(index);
+    }
+  };
+
   const handleRefreshStrategy = async () => {
     setIsRefreshing(true);
+
     try {
         const res = await fetch('/api/dashboard/refresh-strategy', {
             method: 'POST',
@@ -504,8 +544,10 @@ const Dashboard: React.FC<{ onNavigate: (v: ViewType, ctx?: string) => void }> =
         }
 
         const data = await res.json();
+        let apiItems: any[] = [];
+
         if (data.results) {
-            const newItems = data.results.map((r: any, idx: number) => {
+            apiItems = data.results.map((r: any, idx: number) => {
                 let IconComponent = Building2;
                 if (r.icon_type === 'finance') IconComponent = PieChart;
                 else if (r.icon_type === 'tech') IconComponent = Zap;
@@ -520,7 +562,7 @@ const Dashboard: React.FC<{ onNavigate: (v: ViewType, ctx?: string) => void }> =
                     id: `search-${idx}`,
                     icon: IconComponent,
                     color: r.color,
-                    isUrgent: idx === 0,
+                    isUrgent: false,
                     text: r.title, // Use title from API as the main text
                     subtext: r.subtext,
                     content: r.content,
@@ -528,16 +570,15 @@ const Dashboard: React.FC<{ onNavigate: (v: ViewType, ctx?: string) => void }> =
                     isSearch: true
                 };
             });
-            setStrategyItems(newItems);
         }
+        
+        // Merge simulated items with API items
+        setStrategyItems([...simulatedInsightItems, ...apiItems]);
+
     } catch (error) {
         console.error("Failed to refresh strategy:", error);
-        // Update items to show error state
-        setStrategyItems(prev => prev.map(item => ({
-            ...item,
-            content: `获取数据失败: ${error instanceof Error ? error.message : String(error)}`,
-            url: '#'
-        })));
+        // Even if API fails, show simulated items
+        setStrategyItems(simulatedInsightItems);
     } finally {
         setIsRefreshing(false);
     }
@@ -548,7 +589,7 @@ const Dashboard: React.FC<{ onNavigate: (v: ViewType, ctx?: string) => void }> =
     handleRefreshStrategy();
   }, []);
   
-  const [liquidity, setLiquidity] = useState({ value: 8.2, trend: "-3.5%", status: "持续关注" });
+  const [liquidity, setLiquidity] = useState({ value: 5.7296, trend: "-3.5%", status: "持续关注" });
 
   const marketSentiment = useMemo(() => {
     const trendVal = parseFloat(liquidity.trend.replace('%', ''));
@@ -561,32 +602,32 @@ const Dashboard: React.FC<{ onNavigate: (v: ViewType, ctx?: string) => void }> =
   const pillarClusters = [
     { 
       id: 'c1', 
-      name: "帝王卫浴", 
-      revenue: "9.8 亿", 
-      cost: "7.2 亿", 
-      progress: 65, 
+      name: "帝王洁具营收", 
+      revenue: "0.75 亿", 
+      cost: "0.6 亿", 
+      progress: 13, 
       icon: Box, 
       color: "blue", 
       trend: "-8.5%", 
       breakdown: [
-        {label: "智能马桶", value: "3.2 亿"}, 
-        {label: "浴室柜", value: "2.8 亿"}, 
-        {label: "五金卫浴", value: "3.8 亿"}
+        {label: "智能马桶", value: "0.3 亿"}, 
+        {label: "浴室柜", value: "0.25 亿"}, 
+        {label: "五金卫浴", value: "0.2 亿"}
       ] 
     },
     { 
       id: 'c2', 
-      name: "欧神诺瓷砖", 
-      revenue: "13.5 亿", 
-      cost: "10.1 亿", 
-      progress: 58, 
+      name: "欧神诺瓷砖营收", 
+      revenue: "3.14 亿", 
+      cost: "2.6 亿", 
+      progress: 55, 
       icon: Gem, 
       color: "emerald", 
       trend: "-12.3%", 
       breakdown: [
-        {label: "工程渠道", value: "6.2 亿"}, 
-        {label: "零售渠道", value: "5.8 亿"}, 
-        {label: "出口业务", value: "1.5 亿"}
+        {label: "工程渠道", value: "1.5 亿"}, 
+        {label: "零售渠道", value: "1.2 亿"}, 
+        {label: "出口业务", value: "0.44 亿"}
       ] 
     },
   ];
@@ -595,34 +636,34 @@ const Dashboard: React.FC<{ onNavigate: (v: ViewType, ctx?: string) => void }> =
   const strategicClusters = [
     { 
       id: 'c3', 
-      name: "智能制造升级", 
-      revenue: "待转化", 
-      cost: "1.8 亿", 
-      progress: 35, 
+      name: "AI事业集群营收", 
+      revenue: "1.43 亿", 
+      cost: "1.1 亿", 
+      progress: 25, 
       icon: Cpu, 
       color: "indigo", 
       trend: "筹建中", 
       isSpecial: true, 
       breakdown: [
-        {label: "数字化产线改造", value: "0.8 亿"}, 
-        {label: "智能仓储系统", value: "0.6 亿"}, 
-        {label: "AI质检投入", value: "0.4 亿"}
+        {label: "数字化产线改造", value: "0.7 亿"}, 
+        {label: "智能仓储系统", value: "0.4 亿"}, 
+        {label: "AI质检投入", value: "0.33 亿"}
       ] 
     },
     { 
       id: 'c4', 
-      name: "新零售渠道", 
-      revenue: "待突破", 
-      cost: "1.2 亿", 
-      progress: 28, 
+      name: "新材料事业集群营收", 
+      revenue: "0.20 亿", 
+      cost: "0.16 亿", 
+      progress: 3.5, 
       icon: FlaskConical, 
       color: "orange", 
       trend: "布局中", 
       isSpecial: true, 
       breakdown: [
-        {label: "直播电商", value: "0.5 亿"}, 
-        {label: "社区团购", value: "0.4 亿"}, 
-        {label: "设计师渠道", value: "0.3 亿"}
+        {label: "直播电商", value: "0.08 亿"}, 
+        {label: "社区团购", value: "0.07 亿"}, 
+        {label: "设计师渠道", value: "0.05 亿"}
       ] 
     },
   ];
@@ -677,13 +718,32 @@ const Dashboard: React.FC<{ onNavigate: (v: ViewType, ctx?: string) => void }> =
                 <PieChart size={16} className="text-blue-600 dark:text-blue-500" />
                 <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-[0.2em]">业务集群经营快照</h3>
             </div>
-            <div className="flex gap-1.5 items-center">
-                <div className={`h-1.5 rounded-full transition-all duration-300 ${activePageIndex === 0 ? 'w-4 bg-blue-500' : 'w-1.5 bg-slate-300 dark:bg-slate-700'}`}></div>
-                <div className={`h-1.5 rounded-full transition-all duration-300 ${activePageIndex === 1 ? 'w-4 bg-indigo-500' : 'w-1.5 bg-slate-300 dark:bg-slate-700'}`}></div>
+            <div className="flex gap-2 items-center">
+                <button 
+                    onClick={() => scrollToPage(Math.max(0, activePageIndex - 1))}
+                    disabled={activePageIndex === 0}
+                    className="p-1 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 disabled:opacity-30 transition-colors"
+                >
+                    <ChevronLeft size={14} className="text-slate-500 dark:text-slate-400" />
+                </button>
+                
+                <div className="flex gap-1.5 items-center">
+                    <div className={`h-1.5 rounded-full transition-all duration-300 ${activePageIndex === 0 ? 'w-4 bg-blue-500' : 'w-1.5 bg-slate-300 dark:bg-slate-700'}`}></div>
+                    <div className={`h-1.5 rounded-full transition-all duration-300 ${activePageIndex === 1 ? 'w-4 bg-indigo-500' : 'w-1.5 bg-slate-300 dark:bg-slate-700'}`}></div>
+                </div>
+
+                <button 
+                    onClick={() => scrollToPage(Math.min(1, activePageIndex + 1))}
+                    disabled={activePageIndex === 1}
+                    className="p-1 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 disabled:opacity-30 transition-colors"
+                >
+                    <ChevronRight size={14} className="text-slate-500 dark:text-slate-400" />
+                </button>
             </div>
         </div>
         <div className="relative">
           <div 
+            ref={scrollContainerRef}
             className="flex overflow-x-auto no-scrollbar snap-x snap-mandatory" 
             onScroll={handleScroll}
           >

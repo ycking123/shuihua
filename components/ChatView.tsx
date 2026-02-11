@@ -388,7 +388,7 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
                        STRATEGIC_HUD_ACTIVE
                     </div>
                     <h1 className="text-2xl font-bold text-slate-900 dark:text-white leading-tight">
-                        董事长，<br />水华精灵已就绪， 请下达指令。
+                        总裁，您好！<br />水华精灵已就绪， 请下达指令。
                     </h1>
                 </div>
             ) : (
