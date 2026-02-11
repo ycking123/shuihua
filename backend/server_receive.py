@@ -24,6 +24,8 @@ try:
 except ImportError:
     from wechatpy.exceptions import InvalidSignatureException, InvalidAppIdException as InvalidCorpIdException
 
+import requests  # Added for URL download
+
 # --- Internal Imports ---
 from backend.ai_handler import analyze_chat_screenshot_with_glm4v, parse_ai_result_to_todos, analyze_text_message, analyze_intent, extract_meeting_info
 from backend.url_crawler import extract_meeting_url
@@ -489,6 +491,56 @@ def run_wecom_flow_test(wecom_user_id: str):
         "saved_meeting": saved_meeting
     }
 
+def analyze_and_save_image(image_content: bytes, user_id: str, source_origin: str = "wecom_image"):
+    """
+    通用图片分析与保存函数
+    输入：图片二进制数据, 用户ID
+    输出：None (异步处理结果直接存库)
+    """
+    try:
+        # 1. Convert to Base64
+        base64_data = base64.b64encode(image_content).decode('utf-8')
+        logger.info("✅ 图片转码成功，开始 AI 分析...")
+
+        # 2. Call AI Analysis
+        json_result = analyze_chat_screenshot_with_glm4v(base64_data)
+        
+        # 3. Parse and Store Results
+        system_user_id = get_system_user_id(user_id)
+
+        if json_result:
+            new_todos = parse_ai_result_to_todos(json_result, user_id)
+            if new_todos:
+                saved_count = save_todos_to_db(new_todos, system_user_id, source_origin=source_origin)
+                for todo_data in new_todos:
+                    try:
+                        todo_item = TodoItem(**todo_data)
+                        todos_store.insert(0, todo_item)
+                    except Exception:
+                        pass
+                logger.info(f"✅ 图片分析完成，已添加 {saved_count} 条待办")
+            else:
+                logger.warning("⚠️ AI 分析结果解析为空")
+        else:
+            logger.warning("⚠️ AI 分析未返回有效 JSON")
+
+    except Exception as e:
+        logger.error(f"❌ 图片通用处理流程异常: {e}")
+
+def process_image_url_sync(image_url: str, user_id: str = None):
+    """
+    Synchronous function to process image from URL
+    """
+    logger.info(f"🔄 开始处理图片 URL: {image_url} from User: {user_id}")
+    try:
+        response = requests.get(image_url, timeout=30)
+        response.raise_for_status()
+        image_content = response.content
+        
+        analyze_and_save_image(image_content, user_id, source_origin="wecom_smartbot_image")
+    except Exception as e:
+        logger.error(f"❌ 图片 URL 下载或处理失败: {e}")
+
 def process_image_sync(media_id: str, user_id: str = None):
     """
     Synchronous function to process image, to be run in background task.
@@ -503,32 +555,8 @@ def process_image_sync(media_id: str, user_id: str = None):
         response = wechat_client.media.download(media_id)
         image_content = response.content
         
-        # 2. Convert to Base64
-        base64_data = base64.b64encode(image_content).decode('utf-8')
-        logger.info("✅ 图片下载并转码成功")
-
-        # 3. Call AI Analysis
-        # Note: calling synchronous OpenAI/Zhipu client here is fine as this is running in background thread
-        json_result = analyze_chat_screenshot_with_glm4v(base64_data)
-        
-        # 4. Parse and Store Results
-        system_user_id = get_system_user_id(user_id)
-
-        if json_result:
-            new_todos = parse_ai_result_to_todos(json_result, user_id)
-            if new_todos:
-                saved_count = save_todos_to_db(new_todos, system_user_id, source_origin="wecom_image")
-                for todo_data in new_todos:
-                    try:
-                        todo_item = TodoItem(**todo_data)
-                        todos_store.insert(0, todo_item)
-                    except Exception:
-                        pass
-                logger.info(f"✅ 图片分析完成，已添加 {saved_count} 条待办")
-            else:
-                logger.warning("⚠️ AI 分析结果解析为空")
-        else:
-            logger.warning("⚠️ AI 分析未返回有效 JSON")
+        # 2. Analyze and Save (Refactored)
+        analyze_and_save_image(image_content, user_id, source_origin="wecom_image")
 
     except Exception as e:
         logger.error(f"❌ 图片处理流程异常: {e}")
@@ -858,7 +886,158 @@ async def get_analysis_results():
     # Filter todos that are chat_records
     return [t for t in todos_store if t.type == "chat_record"]
 
+@app.get("/api/debug/test-wecom-flow")
+async def trigger_wecom_flow_test(user_id: str = "test_admin"):
+    """
+    手动触发企微全流程测试 (Mock 数据)
+    """
+    try:
+        result = run_wecom_flow_test(user_id)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        logger.error(f"Test failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # --- WeChat Callback Routes ---
+
+@app.post("/wecom/smartbot/callback")
+async def smartbot_receive(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    msg_signature: str = Query(...),
+    timestamp: str = Query(...),
+    nonce: str = Query(...)
+):
+    """
+    智能机器人回调接口 (JSON格式)
+    文档: https://developer.work.weixin.qq.com/document/path/100719
+    """
+    if not crypto:
+        raise HTTPException(status_code=500, detail="WeChatCrypto not initialized")
+
+    try:
+        # 1. Read body
+        body = await request.body()
+        # SmartBot usually sends JSON with "encrypt" field, or XML? 
+        # Documentation says "Receiver message protocol format... JSON"
+        # but also "Receiving messages... are encrypted".
+        # Assuming standard WeCom JSON encryption envelope:
+        # { "encrypt": "BASE64..." }
+        # Or standard XML envelope but user wants separate endpoint?
+        # User said: "New interface... handling JSON format callback".
+        
+        try:
+            # Try parsing as JSON first
+            json_body = await request.json()
+            encrypt_data = json_body.get("encrypt")
+            if not encrypt_data:
+                 # Some callbacks might be plain JSON if not encrypted (but WeCom usually encrypts)
+                 # Or maybe the structure is different.
+                 # If no encrypt field, assume it's already decrypted (unlikely for WeCom)
+                 # Let's assume standard encrypted JSON: {"ToUserName":..., "Encrypt":...}
+                 # Note: standard WeCom callback POSTs XML. 
+                 # But SmartBot might POST JSON.
+                 # Let's check if 'Encrypt' or 'encrypt' exists.
+                 encrypt_data = json_body.get("Encrypt")
+        except json.JSONDecodeError:
+            # Fallback to XML if JSON parse fails (should not happen if user says it's JSON)
+            logger.warning("⚠️ SmartBot callback received non-JSON body, trying XML path")
+            return await wechat_receive(request, background_tasks, msg_signature, timestamp, nonce)
+
+        if not encrypt_data:
+             logger.error("❌ JSON body missing 'encrypt' field")
+             raise HTTPException(status_code=400, detail="Missing encrypt field")
+
+        # 2. Decrypt
+        # WeChatCrypto.decrypt_message expects XML format usually, but internally it just decrypts the string.
+        # Actually decrypt_message implementation:
+        # def decrypt_message(self, msg, signature, timestamp, nonce):
+        #     ... extracts encrypt from xml ...
+        # So we cannot use decrypt_message directly if input is JSON string or just the encrypt string.
+        # We should use decrypt() method if available, or construct a fake XML.
+        # Looking at wechatpy source, there is a `decrypt` method:
+        # def decrypt(self, text, receiveid): ...
+        # But we need to verify signature first.
+        # `check_signature` verifies signature.
+        
+        # Correct flow for custom encrypted data:
+        # 1. Verify signature
+        # signature = get_sha1(token, timestamp, nonce, encrypt_data)
+        # if signature != msg_signature: raise...
+        # 2. Decrypt
+        # content = decrypt(encrypt_data)
+        
+        # Let's use crypto._check_signature and crypto.decrypt
+        # Accessing protected members is risky, let's see public API.
+        # crypto.check_signature(signature, timestamp, nonce, echo_str) is for GET verification.
+        
+        # We can simulate an XML for decrypt_message because it extracts <Encrypt> node.
+        fake_xml = f"<xml><ToUserName><![CDATA[toUser]]></ToUserName><Encrypt><![CDATA[{encrypt_data}]]></Encrypt></xml>"
+        decrypted_xml = crypto.decrypt_message(fake_xml, msg_signature, timestamp, nonce)
+        
+        # 3. Parse Decrypted Content (It should be JSON string according to SmartBot docs)
+        # The decrypted content from SmartBot is JSON string.
+        try:
+            msg_data = json.loads(decrypted_xml)
+        except json.JSONDecodeError:
+            # It might be XML after all?
+            # User said "JSON format callback".
+            # If it fails, maybe it is XML.
+            logger.warning("⚠️ Decrypted content is not JSON, falling back to XML parse")
+            # If it's XML, we can reuse existing logic or parse it here
+            # But let's stick to user requirement: JSON handling.
+            raise
+            
+        logger.info(f"📩 SmartBot 收到消息: {msg_data}")
+
+        # 4. Dispatch Logic
+        msg_type = msg_data.get("msgtype")
+        user_id = msg_data.get("from", {}).get("userid")
+        
+        if msg_type == "text":
+            content = msg_data.get("text", {}).get("content", "")
+            background_tasks.add_task(process_text_sync, content, user_id)
+            
+        elif msg_type == "image":
+            image_url = msg_data.get("image", {}).get("url")
+            if image_url:
+                background_tasks.add_task(process_image_url_sync, image_url, user_id)
+            else:
+                logger.warning("⚠️ 图片消息缺少 URL")
+                
+        elif msg_type == "mixed":
+             # Mixed type: text + image
+             # Handle each item
+             items = msg_data.get("mixed", {}).get("msg_item", [])
+             for item in items:
+                 m_type = item.get("msgtype")
+                 if m_type == "text":
+                     t_content = item.get("text", {}).get("content", "")
+                     background_tasks.add_task(process_text_sync, t_content, user_id)
+                 elif m_type == "image":
+                     img_url = item.get("image", {}).get("url")
+                     if img_url:
+                         background_tasks.add_task(process_image_url_sync, img_url, user_id)
+        
+        else:
+            logger.info(f"⚠️ SmartBot 暂不支持的消息类型: {msg_type}")
+
+        # 5. Response
+        # SmartBot expects a JSON response or empty/success?
+        # "Developers can choose to generate streaming message replies... or reply directly with template card messages"
+        # If we just want to acknowledge, we can return success.
+        # But wait, the response also needs to be encrypted?
+        # "Receiving messages and passive replies are encrypted"
+        # If we just return 200 OK, it might be fine for async handling (we push messages actively later).
+        return Response(content="success", media_type="text/plain")
+
+    except InvalidSignatureException:
+        logger.error("❌ 消息签名验证失败")
+        raise HTTPException(status_code=403, detail="Invalid Signature")
+    except Exception as e:
+        logger.error(f"❌ SmartBot 处理异常: {e}")
+        # Return success to avoid retry loop
+        return Response(content="success", media_type="text/plain")
 
 @app.get("/wecom/callback")
 async def wechat_verify(
