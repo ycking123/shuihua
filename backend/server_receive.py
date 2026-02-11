@@ -26,6 +26,12 @@ except ImportError:
 
 import requests  # Added for URL download
 
+# --- Relaxed WeChat Crypto Imports ---
+import struct
+import socket
+from wechatpy.crypto import PrpCrypto
+from wechatpy.utils import byte2int, to_text
+
 # --- Internal Imports ---
 from backend.ai_handler import analyze_chat_screenshot_with_glm4v, parse_ai_result_to_todos, analyze_text_message, analyze_intent, extract_meeting_info
 from backend.url_crawler import extract_meeting_url
@@ -75,13 +81,43 @@ if not all([WECOM_TOKEN, WECOM_AES_KEY, WECOM_CORP_ID]):
     logger.error("❌ 缺少必要的企业微信配置 (WECOM_TOKEN, WECOM_AES_KEY, WECOM_CORP_ID)，请检查 .env 文件")
     # 不退出，允许服务器启动以服务前端，但微信功能将不可用
 
+# --- Relaxed WeChat Crypto Implementation ---
+class RelaxedPrpCrypto(PrpCrypto):
+    """
+    Relaxed PrpCrypto that skips CorpID/AppID validation during decryption.
+    """
+    def _decrypt(self, text, _id, exception=None):
+        try:
+            # Decrypt using parent's cipher
+            plain_text = self.cipher.decrypt(base64.b64decode(text))
+            padding = byte2int(plain_text[-1])
+            content = plain_text[16:-padding]
+            xml_length = socket.ntohl(struct.unpack(b'I', content[:4])[0])
+            xml_content = to_text(content[4:xml_length + 4])
+            # from_id = to_text(content[xml_length + 4:])
+            # Skip validation: if from_id != _id: raise exception
+            return xml_content
+        except Exception as e:
+            logger.error(f"Relaxed decryption failed: {e}")
+            raise
+
+class RelaxedWeChatCrypto(WeChatCrypto):
+    """
+    Relaxed WeChatCrypto that uses RelaxedPrpCrypto to skip validation.
+    """
+    def check_signature(self, signature, timestamp, nonce, echo_str):
+        return self._check_signature(signature, timestamp, nonce, echo_str, RelaxedPrpCrypto)
+
+    def decrypt_message(self, msg, signature, timestamp, nonce):
+        return self._decrypt_message(msg, signature, timestamp, nonce, RelaxedPrpCrypto)
+
 # Initialize WeChat Components
 crypto = None
 wechat_client = None
 
 if all([WECOM_TOKEN, WECOM_AES_KEY, WECOM_CORP_ID]):
     try:
-        crypto = WeChatCrypto(WECOM_TOKEN, WECOM_AES_KEY, WECOM_CORP_ID)
+        crypto = RelaxedWeChatCrypto(WECOM_TOKEN, WECOM_AES_KEY, WECOM_CORP_ID)
         logger.info("✅ WeChatCrypto 初始化成功")
     except Exception as e:
         logger.error(f"❌ 初始化 WeChatCrypto 失败: {e}")
