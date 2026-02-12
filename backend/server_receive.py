@@ -380,7 +380,11 @@ def save_meeting_data_to_db(crawl_result, system_user_id: Optional[str], meeting
                 title = t.get("title") or "会议待办"
                 description = t.get("description") or title
                 assignee = t.get("assignee") or "Sender（发送者）"
-                priority = t.get("priority") or "normal"
+                
+                raw_priority = t.get("priority") or "normal"
+                priority_map = {"高": "urgent", "中": "high", "低": "normal", "high": "high", "medium": "normal", "low": "low", "urgent": "urgent"}
+                priority = priority_map.get(str(raw_priority).lower(), "normal")
+                
                 due_date = t.get("due_date") or ""
 
             content_parts = [f"任务详情: {description}", f"责任人: {assignee}"]

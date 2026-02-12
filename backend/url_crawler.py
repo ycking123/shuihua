@@ -7,6 +7,7 @@ from difflib import SequenceMatcher
 from typing import Optional, Dict, Any, List, Tuple
 from urllib.parse import urljoin
 from backend.ai_handler import extract_todos_from_text
+from backend.crawl_with_browser import crawl_meeting_minutes
 
 logger = logging.getLogger("URLCrawler")
 
@@ -166,6 +167,45 @@ def extract_next_data_json(html: str) -> Optional[str]:
     except Exception:
         return None
 
+def extract_server_data_objects(texts: List[str]) -> List[Dict[str, Any]]:
+    server_data_list = []
+    for text in texts:
+        if not text or "serverData" not in text:
+            continue
+        idx = text.find('"serverData":')
+        while idx != -1:
+            start = idx + len('"serverData":')
+            obj_str = extract_json_object(text, start)
+            if obj_str:
+                try:
+                    server_data_list.append(json.loads(obj_str))
+                except Exception:
+                    pass
+            idx = text.find('"serverData":', idx + len('"serverData":'))
+    return server_data_list
+
+def find_text_by_keys(obj: Any, key_keywords: List[str], min_length: int = 60) -> List[str]:
+    results = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if isinstance(v, str):
+                if any(kw in k.lower() for kw in key_keywords) and len(v) >= min_length:
+                    results.append(v)
+            else:
+                results.extend(find_text_by_keys(v, key_keywords, min_length))
+    elif isinstance(obj, list):
+        for item in obj:
+            results.extend(find_text_by_keys(item, key_keywords, min_length))
+    return results
+
+def pick_best_text(texts: List[str]) -> str:
+    if not texts:
+        return ""
+    def score(s: str) -> int:
+        zh_count = len(re.findall(r'[\u4e00-\u9fa5]', s))
+        return len(s) + zh_count * 2
+    return max(texts, key=score)
+
 def strip_html_tags(html: str) -> str:
     if "<" not in html:
         return html
@@ -258,6 +298,8 @@ def split_speaker_segments(text: str) -> List[Tuple[str, str]]:
     return segments
 
 def normalize_name(name: str) -> str:
+    if "Sender" in name or "发送者" in name:
+        return "Sender（发送者）"
     name = re.sub(r"[^\u4e00-\u9fa5A-Za-z0-9]", "", name)
     name = re.sub(r"(先生|女士|总|经理|老师|同学|主任|老板)$", "", name)
     return name.strip()
@@ -345,6 +387,7 @@ def parse_meeting_page(html: str) -> Dict[str, Any]:
     next_data = extract_next_data_json(html)
     if next_data:
         candidate_texts.append(next_data)
+    server_data_list = extract_server_data_objects(candidate_texts)
 
     title = ""
     for text in candidate_texts:
@@ -372,6 +415,12 @@ def parse_meeting_page(html: str) -> Dict[str, Any]:
     for t in transcript_candidates:
         if isinstance(t, str) and len(t) > len(transcript):
             transcript = t
+    if not transcript and server_data_list:
+        key_keywords = ["transcript", "transcription", "asr", "subtitle", "minutes", "summary", "text", "content", "speech"]
+        text_hits = []
+        for sd in server_data_list:
+            text_hits.extend(find_text_by_keys(sd, key_keywords))
+        transcript = pick_best_text(text_hits)
     if not transcript:
         transcript = strip_html_tags(html)
 
@@ -394,20 +443,33 @@ def parse_meeting_page(html: str) -> Dict[str, Any]:
     }
 
 def crawl_and_parse_meeting(url: str, cookies_str: Optional[str] = None) -> Optional[Dict[str, Any]]:
-    html = fetch_content_with_cookies(url, cookies_str)
-    if not html:
-        return None
-    parsed = parse_meeting_page(html)
-    
-    # 只要 summary 或 todos 为空，就尝试 fallback，但不要覆盖已有的值
-    if not parsed.get("summary") or not parsed.get("todos"):
-        fallback = parse_meeting_html(html)
-        if fallback.get("minutes_text") and not parsed.get("summary"):
-            parsed["summary"] = fallback.get("minutes_text", "")
-        if fallback.get("title") and (not parsed.get("title") or parsed.get("title") == "会议纪要"):
-            parsed["title"] = fallback.get("title")
+    """
+    使用 Playwright 浏览器爬虫获取会议内容 (替代原有的静态爬取)
+    """
+    try:
+        logger.info(f"🔄 切换到浏览器爬虫模式 (Playwright) 爬取: {url}")
+        # 调用基于 pc.py 逻辑的浏览器爬虫
+        result = crawl_meeting_minutes(url, cookies_str)
+        
+        if not result:
+            logger.warning("⚠️ 浏览器爬虫未返回结果")
+            return None
             
-    return parsed
+        # 补充 personal_todos 生成逻辑 (复用本文件中的函数)
+        # 如果爬虫返回结果中没有 personal_todos，但有转写文本和待办，则自动生成
+        if not result.get("personal_todos") and result.get("transcript"):
+            logger.info("🔨 正在基于转写内容生成个人待办...")
+            result["personal_todos"] = build_personal_todos(result["transcript"], result.get("todos", []))
+            
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ 浏览器爬虫失败: {e}")
+        return None
+
+# 原有的静态爬取逻辑保留但不使用
+def crawl_and_parse_meeting_legacy(url: str, cookies_str: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    html = fetch_content_with_cookies(url, cookies_str)
 
 def fetch_content_with_cookies(url: str, cookies_str: Optional[str]) -> Optional[str]:
     headers = {
