@@ -2,8 +2,11 @@ import requests
 import logging
 import re
 import json
-from typing import Optional, Dict, Any
+import html as html_lib
+from difflib import SequenceMatcher
+from typing import Optional, Dict, Any, List, Tuple
 from urllib.parse import urljoin
+from backend.ai_handler import extract_todos_from_text
 
 logger = logging.getLogger("URLCrawler")
 
@@ -111,28 +114,279 @@ def parse_meeting_html(html: str) -> Dict[str, Any]:
         
     return result
 
-def crawl_and_parse_meeting(url: str, cookies_str: str) -> Optional[Dict[str, Any]]:
-    """
-    爬取并解析会议内容 (入口函数)
-    """
+def extract_json_block(text: str, start_index: int) -> Optional[str]:
+    stack = []
+    in_string = False
+    escape = False
+    for i in range(start_index, len(text)):
+        char = text[i]
+        if in_string:
+            if escape:
+                escape = False
+            elif char == '\\':
+                escape = True
+            elif char == '"':
+                in_string = False
+        else:
+            if char == '"':
+                in_string = True
+            elif char in "{[":
+                stack.append(char)
+            elif char in "}]":
+                if not stack:
+                    return None
+                last = stack.pop()
+                if not stack:
+                    return text[start_index:i + 1]
+    return None
+
+def extract_next_payloads(html: str) -> List[str]:
+    payloads = []
+    pushes = re.finditer(r'self\.__next_f\.push\(\[(.*?)\]\)', html)
+    for match in pushes:
+        inner = match.group(1)
+        parts = inner.split(',', 1)
+        if len(parts) < 2:
+            continue
+        json_str_raw = parts[1].strip()
+        if json_str_raw.startswith('"') and json_str_raw.endswith('"'):
+            try:
+                payloads.append(json.loads(json_str_raw))
+            except Exception:
+                continue
+    return payloads
+
+def extract_next_data_json(html: str) -> Optional[str]:
+    match = re.search(r'__NEXT_DATA__[^>]*>(.*?)</script>', html, re.DOTALL)
+    if not match:
+        return None
+    raw = match.group(1)
+    try:
+        return json.dumps(json.loads(raw), ensure_ascii=False)
+    except Exception:
+        return None
+
+def strip_html_tags(html: str) -> str:
+    if "<" not in html:
+        return html
+    cleaned = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html, flags=re.DOTALL | re.IGNORECASE)
+    cleaned = re.sub(r"<[^>]+>", " ", cleaned)
+    cleaned = html_lib.unescape(cleaned)
+    cleaned = re.sub(r"[ \t\r\f\v]+", " ", cleaned)
+    return cleaned.strip()
+
+def extract_title_from_html(html: str) -> str:
+    match = re.search(r"<title[^>]*>(.*?)</title>", html, re.DOTALL | re.IGNORECASE)
+    if match:
+        return html_lib.unescape(match.group(1)).strip()
+    return ""
+
+def extract_json_values(text: str, key: str) -> List[str]:
+    values = []
+    pattern = rf'"{re.escape(key)}"\s*:\s*'
+    for match in re.finditer(pattern, text):
+        idx = match.end()
+        while idx < len(text) and text[idx].isspace():
+            idx += 1
+        if idx >= len(text):
+            continue
+        if text[idx] in "{[":
+            block = extract_json_block(text, idx)
+            if block:
+                values.append(block)
+        elif text[idx] == '"':
+            i = idx + 1
+            escape = False
+            while i < len(text):
+                char = text[i]
+                if escape:
+                    escape = False
+                elif char == '\\':
+                    escape = True
+                elif char == '"':
+                    values.append(text[idx + 1:i])
+                    break
+                i += 1
+    return values
+
+def normalize_transcript(text: str) -> str:
+    if not text:
+        return ""
+    text = text.replace("\u3000", " ").replace("\r", " ").replace("\t", " ")
+    text = re.sub(r"\s{2,}", " ", text)
+    text = text.replace("。", "。\n").replace("！", "！\n").replace("？", "？\n")
+    text = re.sub(r"\n{2,}", "\n", text)
+    return text.strip()
+
+def split_speaker_segments(text: str) -> List[Tuple[str, str]]:
+    segments = []
+    pattern = re.compile(r'([\u4e00-\u9fa5A-Za-z]{1,10})\s*(\d{1,2}:\d{2})')
+    matches = list(pattern.finditer(text))
+    if not matches:
+        return [("", text)]
+    for i, match in enumerate(matches):
+        speaker = match.group(1)
+        start = match.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        content = text[start:end].strip()
+        segments.append((speaker, content))
+    return segments
+
+def normalize_name(name: str) -> str:
+    name = re.sub(r"[^\u4e00-\u9fa5A-Za-z0-9]", "", name)
+    name = re.sub(r"(先生|女士|总|经理|老师|同学|主任|老板)$", "", name)
+    return name.strip()
+
+def cluster_names(names: List[str]) -> Dict[str, str]:
+    normalized = []
+    mapping = {}
+    for name in names:
+        norm = normalize_name(name)
+        if not norm:
+            continue
+        matched = None
+        for base in normalized:
+            ratio = SequenceMatcher(None, norm, base).ratio()
+            if ratio >= 0.85 or norm in base or base in norm:
+                matched = base
+                break
+        if not matched:
+            normalized.append(norm)
+            matched = norm
+        mapping[name] = matched
+    return mapping
+
+def extract_task_sentences(text: str) -> List[str]:
+    keywords = [
+        "负责", "跟进", "完成", "提交", "整理", "汇总", "准备", "推进",
+        "对接", "安排", "落实", "输出", "复盘", "确认", "测试", "上线",
+        "优化", "需求", "修复", "交付", "配合", "支持", "回传"
+    ]
+    sentences = re.split(r"[。！？\n]", text)
+    tasks = []
+    for s in sentences:
+        s = s.strip()
+        if len(s) < 6:
+            continue
+        if any(k in s for k in keywords):
+            tasks.append(s)
+    return tasks
+
+def build_personal_todos(transcript: str, meeting_todos: List[dict]) -> List[dict]:
+    personal = []
+    segments = split_speaker_segments(transcript)
+    speaker_names = [s for s, _ in segments if s]
+    name_map = cluster_names(speaker_names)
+
+    for t in meeting_todos or []:
+        if isinstance(t, str):
+            personal.append({
+                "title": t,
+                "description": t,
+                "assignee": "Sender（发送者）",
+                "priority": "medium",
+                "due_date": ""
+            })
+            continue
+        assignee = t.get("assignee") or "Sender（发送者）"
+        assignee = name_map.get(assignee, normalize_name(assignee)) or "Sender（发送者）"
+        personal.append({
+            "title": t.get("title") or "会议待办",
+            "description": t.get("description") or t.get("title") or "",
+            "assignee": assignee,
+            "priority": t.get("priority") or "medium",
+            "due_date": t.get("due_date") or ""
+        })
+
+    if personal:
+        return personal
+
+    for speaker, content in segments:
+        assignee = name_map.get(speaker, normalize_name(speaker)) or "Sender（发送者）"
+        for s in extract_task_sentences(content):
+            title = s[:32]
+            personal.append({
+                "title": title,
+                "description": s,
+                "assignee": assignee,
+                "priority": "medium",
+                "due_date": ""
+            })
+    return personal
+
+def parse_meeting_page(html: str) -> Dict[str, Any]:
+    candidate_texts = [html]
+    candidate_texts.extend([p for p in extract_next_payloads(html) if p])
+    next_data = extract_next_data_json(html)
+    if next_data:
+        candidate_texts.append(next_data)
+
+    title = ""
+    for text in candidate_texts:
+        if not title:
+            title = extract_title_from_html(text)
+        for sd in extract_json_values(text, "serverData"):
+            try:
+                sd_json = json.loads(sd)
+                meeting_info = sd_json.get("meeting_info") or {}
+                subject = meeting_info.get("subject") or ""
+                if subject:
+                    try:
+                        import base64
+                        title = base64.b64decode(subject).decode("utf-8")
+                    except Exception:
+                        title = subject
+            except Exception:
+                continue
+
+    transcript_candidates = []
+    for text in candidate_texts:
+        for key in ["transcript", "transcription", "asr", "minutes_text", "text"]:
+            transcript_candidates.extend(extract_json_values(text, key))
+    transcript = ""
+    for t in transcript_candidates:
+        if isinstance(t, str) and len(t) > len(transcript):
+            transcript = t
+    if not transcript:
+        transcript = strip_html_tags(html)
+
+    transcript = normalize_transcript(transcript)
+    ai_result = extract_todos_from_text(transcript) if transcript else None
+    summary = ""
+    todos = []
+    if ai_result:
+        summary = ai_result.get("summary", "")
+        todos = ai_result.get("task_list", []) or []
+
+    personal_todos = build_personal_todos(transcript, todos)
+
+    return {
+        "title": title or "会议纪要",
+        "summary": summary or "",
+        "transcript": transcript or "",
+        "todos": todos or [],
+        "personal_todos": personal_todos or []
+    }
+
+def crawl_and_parse_meeting(url: str, cookies_str: Optional[str] = None) -> Optional[Dict[str, Any]]:
     html = fetch_content_with_cookies(url, cookies_str)
     if not html:
         return None
-    
-    return parse_meeting_html(html)
+    parsed = parse_meeting_page(html)
+    if not parsed.get("summary") and not parsed.get("todos"):
+        fallback = parse_meeting_html(html)
+        if fallback.get("minutes_text"):
+            parsed["summary"] = fallback.get("minutes_text", "")
+        if fallback.get("title") and parsed.get("title") == "会议纪要":
+            parsed["title"] = fallback.get("title")
+    return parsed
 
-def fetch_content_with_cookies(url: str, cookies_str: str) -> Optional[str]:
-    """
-    使用用户提供的 Cookie 爬取页面内容
-    """
-    if not cookies_str:
-        logger.warning("⚠️ 未提供 Cookie，无法爬取受保护的会议页面")
-        return None
-
+def fetch_content_with_cookies(url: str, cookies_str: Optional[str]) -> Optional[str]:
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Cookie": cookies_str
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
+    if cookies_str:
+        headers["Cookie"] = cookies_str
 
     try:
         logger.info(f"🕷️ 正在尝试爬取 URL: {url}")

@@ -34,8 +34,7 @@ from wechatpy.utils import byte2int, to_text
 
 # --- Internal Imports ---
 from backend.ai_handler import analyze_chat_screenshot_with_glm4v, parse_ai_result_to_todos, analyze_text_message, analyze_intent, extract_meeting_info
-from backend.url_crawler import extract_meeting_url
-from backend.crawl_with_browser import crawl_meeting_minutes
+from backend.url_crawler import extract_meeting_url, crawl_and_parse_meeting
 
 try:
     from pypinyin import lazy_pinyin
@@ -319,6 +318,40 @@ def save_meeting_data_to_db(crawl_result, system_user_id: Optional[str], meeting
     try:
         user_id = system_user_id or get_system_user_id(None)
 
+        meeting_summary = crawl_result.get("summary", "")
+        extracted_todos = crawl_result.get("todos", [])
+        personal_todos = crawl_result.get("personal_todos", [])
+        if isinstance(extracted_todos, str):
+            try:
+                parsed = json.loads(extracted_todos)
+                if isinstance(parsed, dict):
+                    extracted_todos = parsed.get("task_list", [])
+                elif isinstance(parsed, list):
+                    extracted_todos = parsed
+            except Exception:
+                extracted_todos = []
+
+        todo_lines = []
+        for idx, t in enumerate(extracted_todos or []):
+            if isinstance(t, str):
+                title = t
+                item_desc = t
+                assignee = "待定"
+                due_date = "未指定"
+            else:
+                item_desc = t.get("description", "")
+                assignee = t.get("assignee", "待定")
+                due_date = t.get("due_date", "未指定")
+                title = t.get("title", "未命名任务")
+            todo_lines.append(f"{idx + 1}. {title}\n   - 详情: {item_desc}\n   - 责任人: {assignee}\n   - 截止: {due_date}")
+
+        combined_summary = meeting_summary
+        if todo_lines:
+            if combined_summary:
+                combined_summary = f"{combined_summary}\n\n【会议待办】\n" + "\n".join(todo_lines)
+            else:
+                combined_summary = "【会议待办】\n" + "\n".join(todo_lines)
+
         # 1. Save Meeting Record
         new_meeting = Meeting(
             id=str(uuid.uuid4()),
@@ -327,7 +360,7 @@ def save_meeting_data_to_db(crawl_result, system_user_id: Optional[str], meeting
             start_time=datetime.now(),
             end_time=datetime.now(),
             location=meeting_url or "腾讯会议",
-            summary=clean_text(crawl_result.get("summary", "")),
+            summary=clean_text(combined_summary),
             transcript=clean_text(crawl_result.get("transcript", "")),
             created_at=datetime.now(),
             updated_at=datetime.now()
@@ -335,61 +368,42 @@ def save_meeting_data_to_db(crawl_result, system_user_id: Optional[str], meeting
         db.add(new_meeting)
         
         # 2. Process Todos
-        extracted_todos = crawl_result.get("todos", [])
-        # Parse if string
-        if isinstance(extracted_todos, str):
-            try:
-                parsed = json.loads(extracted_todos)
-                if isinstance(parsed, dict):
-                    extracted_todos = parsed.get("task_list", [])
-                elif isinstance(parsed, list):
-                    extracted_todos = parsed
-            except:
-                extracted_todos = []
-        
         count = 0
-        if extracted_todos and isinstance(extracted_todos, list):
-            # Combine all todos into one content string
-            todo_items_str = []
-            for idx, t in enumerate(extracted_todos):
-                # Handle if t is just a string
-                if isinstance(t, str):
-                    t = {
-                        "title": t,
-                        "description": t,
-                        "priority": "medium",
-                        "assignee": "待定"
-                    }
-                
-                # Format each todo item
-                item_desc = t.get('description', '')
-                assignee = t.get('assignee', '待定')
-                due_date = t.get('due_date', '未指定')
-                title = t.get('title', '未命名任务')
-                
-                todo_items_str.append(f"{idx+1}. {title}\n   - 详情: {item_desc}\n   - 责任人: {assignee}\n   - 截止: {due_date}")
-                count += 1
-            
-            if count > 0:
-                combined_content = "\n".join(todo_items_str)
-                
-                # Create ONE meeting todo item
-                meeting_todo = Todo(
-                    id=str(uuid.uuid4()),
-                    user_id=user_id,
-                    title=clean_text(new_meeting.title), # Use meeting title as todo title
-                    content=clean_text(f"【会议待办】\n{combined_content}"),
-                    type="meeting", # Special type for meeting todos
-                    priority="high",
-                    status="pending",
-                    sender="会议助手",
-                    source_origin="meeting_minutes",
-                    source_message_id=new_meeting.id, # Link to meeting
-                    created_at=datetime.now(),
-                    updated_at=datetime.now()
-                )
-                db.add(meeting_todo)
-                logger.info(f"✅ [DB] 已创建合并后的会议待办，包含 {count} 个子项")
+        for t in personal_todos or []:
+            if isinstance(t, str):
+                title = t
+                description = t
+                assignee = "Sender（发送者）"
+                priority = "normal"
+                due_date = ""
+            else:
+                title = t.get("title") or "会议待办"
+                description = t.get("description") or title
+                assignee = t.get("assignee") or "Sender（发送者）"
+                priority = t.get("priority") or "normal"
+                due_date = t.get("due_date") or ""
+
+            content_parts = [f"任务详情: {description}", f"责任人: {assignee}"]
+            if due_date:
+                content_parts.append(f"截止时间: {due_date}")
+            content = "\n".join(content_parts)
+
+            meeting_todo = Todo(
+                id=str(uuid.uuid4()),
+                user_id=user_id,
+                title=clean_text(f"[{assignee}] {title}"),
+                content=clean_text(content),
+                type="meeting",
+                priority=priority,
+                status="pending",
+                sender="会议助手",
+                source_origin="meeting_minutes",
+                source_message_id=new_meeting.id,
+                created_at=datetime.now(),
+                updated_at=datetime.now()
+            )
+            db.add(meeting_todo)
+            count += 1
 
         # If no todos, we don't create any Todo item. 
         # The meeting record itself is saved in step 1.
@@ -707,11 +721,7 @@ def process_text_sync(text_content: str, user_id: str = None, chat_id: str = Non
         meeting_url = extract_meeting_url(text_content)
         if meeting_url:
             logger.info(f"🔗 检测到会议链接: {meeting_url}")
-            if not WECOM_MEETING_COOKIES:
-                logger.warning("⚠️ 未配置 WECOM_MEETING_COOKIES，爬虫可能无法访问受限内容")
-            
-            # 启动爬虫
-            crawl_result = crawl_meeting_minutes(meeting_url, WECOM_MEETING_COOKIES)
+            crawl_result = crawl_and_parse_meeting(meeting_url, WECOM_MEETING_COOKIES)
             
             if crawl_result:
                 saved_count = save_meeting_data_to_db(crawl_result, system_user_id, meeting_url=meeting_url)
