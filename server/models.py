@@ -103,3 +103,19 @@ class Meeting(Base):
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
+class StrategyDaily(Base):
+    __tablename__ = "shjl_strategy_daily"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    report_date = Column(String(10), nullable=False) # Format: YYYY-MM-DD
+    query_key = Column(String(255), nullable=False)
+    title = Column(String(255))
+    content = Column(Text)
+    url = Column(String(500))
+    subtext = Column(String(100))
+    color = Column(String(20))
+    icon_type = Column(String(50))
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+

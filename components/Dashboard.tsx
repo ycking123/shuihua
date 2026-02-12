@@ -283,12 +283,29 @@ const SimpleMarkdown: React.FC<{ content: string }> = ({ content }) => {
                 const isList = line.trim().startsWith('- ') || line.trim().startsWith('• ') || line.trim().startsWith('* ');
                 const cleanLine = isList ? line.trim().replace(/^[-•*]\s+/, '') : line;
 
-                // Parse bold text: **text**
-                const parts = cleanLine.split(/(\*\*.*?\*\*)/g);
+                // Parse links: [text](url) and bold: **text**
+                const parts = cleanLine.split(/(\[[^\]]+\]\([^)]+\)|\*\*.*?\*\*)/g);
 
                 const renderedLine = (
                     <span>
                         {parts.map((part, i) => {
+                            // Check for link
+                            const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+                            if (linkMatch) {
+                                return (
+                                    <a 
+                                        key={i} 
+                                        href={linkMatch[2]} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer" 
+                                        className="text-blue-500 hover:underline mx-1"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        {linkMatch[1]}
+                                    </a>
+                                );
+                            }
+
                             if (part.startsWith('**') && part.endsWith('**')) {
                                 return <strong key={i} className="font-bold text-slate-800 dark:text-slate-100">{part.slice(2, -2)}</strong>;
                             }
@@ -361,18 +378,6 @@ const InsightItem: React.FC<{
                 ) : (
                     <>
                         <SimpleMarkdown content={item.content || ''} />
-                        {item.url && item.url !== '#' && (
-                            <a 
-                                href={item.url} 
-                                target="_blank" 
-                                rel="noopener noreferrer" 
-                                className="flex items-center gap-2 text-blue-600 dark:text-blue-400 hover:underline text-xs mt-2 px-1"
-                                onClick={(e) => e.stopPropagation()}
-                            >
-                                <ExternalLink size={12} />
-                                查看来源原文
-                            </a>
-                        )}
                     </>
                 )}
             </div>
@@ -400,30 +405,7 @@ const InsightItem: React.FC<{
 );
 };
 
-  const simulatedInsightItems = [
-    {
-        id: 'sim-1',
-        icon: Factory,
-        color: 'emerald',
-        isUrgent: true,
-        text: '吴晓波探访东鹏重庆基地，揭示“智造+绿色”融合新范式',
-        subtext: '竞品动态 (COMPETITOR)',
-        content: '知名财经作家吴晓波深入探访东鹏控股重庆基地，实地调研数字化工厂与绿色生产体系，高度评价其在建陶行业转型升级中的示范作用。',
-        url: 'https://www.dongpeng.net/news/info_9_itemid_18753.html',
-        isSearch: true
-    },
-    {
-        id: 'sim-2',
-        icon: Zap,
-        color: 'cyan',
-        isUrgent: false,
-        text: '分析排泄物，科勒搞了个AI马桶摄像头',
-        subtext: '产品创新 (PRODUCT)',
-        content: '科勒推出搭载AI摄像头的智能马桶，通过图像识别技术分析排泄物特征，为用户提供实时健康监测与预警，引领卫浴产品智能化新方向。',
-        url: 'https://news.qq.com/rain/a/20251028A06E1E00?suid=&media_id=',
-        isSearch: true
-    }
-  ];
+  const simulatedInsightItems = [];
 
   const insightItems = [
     ...simulatedInsightItems,
@@ -870,4 +852,5 @@ const Dashboard: React.FC<{ onNavigate: (v: ViewType, ctx?: string) => void }> =
 };
 
 export default Dashboard;
+
 

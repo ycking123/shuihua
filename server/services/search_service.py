@@ -1,42 +1,70 @@
-from tavily import TavilyClient
+import requests
+import json
 import os
 
 class SearchService:
     def __init__(self):
-        # Prefer env var, fallback to hardcoded (from user's test file) if needed, 
-        # but better to rely on env.
-        # User's test file had: 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
-        # We saw it in .env.local as LOCAL_TAVILY_KEY
-        api_key = os.getenv("LOCAL_TAVILY_KEY")
-        if not api_key:
-             print("Warning: LOCAL_TAVILY_KEY not found in environment variables.")
-        
-        self.client = TavilyClient(api_key=api_key)
+        # Bocha API Key provided by user (from test_bocha_fastapi.py)
+        self.api_key = "sk-b324513f33f84c90adc017d5dbe55858"
+        self.api_url = "https://api.bocha.cn/v1/web-search"
 
     def search(self, query: str):
         """
-        Executes a search query using Tavily API.
-        Returns the search results context.
+        Executes a search query using Bocha API.
+        Returns the search results in a format compatible with the previous Tavily implementation.
         """
         try:
             print(f"Searching for: {query}")
-            response = self.client.search(query, search_depth="basic")
-            # response is typically a dict with 'results' list
-            return response
+            
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "query": query,
+                "summary": True,
+                "freshness": "noLimit",
+                "count": 10
+            }
+            
+            response = requests.post(self.api_url, headers=headers, json=payload, timeout=30)
+            
+            if response.status_code != 200:
+                print(f"Bocha Search Error: {response.status_code} - {response.text}")
+                return {"error": f"API Error: {response.status_code}", "results": []}
+                
+            resp_json = response.json()
+            
+            # Bocha response structure: {"code": 200, "data": {"webPages": {"value": [...]}}}
+            data = resp_json.get("data", {})
+            
+            results = []
+            if "webPages" in data and "value" in data["webPages"]:
+                for item in data["webPages"]["value"]:
+                    content = item.get("summary") or item.get("snippet") or ""
+                    results.append({
+                        "title": item.get("name"),
+                        "url": item.get("url"),
+                        "content": content
+                    })
+            
+            return {"results": results}
+            
         except Exception as e:
-            print(f"Tavily Search Error: {e}")
-            return {"error": str(e)}
+            print(f"Bocha Search Exception: {e}")
+            return {"error": str(e), "results": []}
 
     def get_search_context(self, query: str) -> str:
         """
         Helper to get a string context from search results.
         """
-        results = self.search(query)
-        if not results or "results" not in results:
+        search_res = self.search(query)
+        if not search_res or "results" not in search_res:
             return ""
         
         context = "Search Results:\n"
-        for res in results.get("results", []):
+        for res in search_res.get("results", []):
             context += f"- Title: {res.get('title')}\n  Content: {res.get('content')}\n  URL: {res.get('url')}\n\n"
         
         return context
@@ -45,12 +73,13 @@ class SearchService:
         """
         Executes search and returns only the content of the results, cleaned.
         """
-        results = self.search(query)
-        if not results or "results" not in results:
+        search_res = self.search(query)
+        if not search_res or "results" not in search_res:
             return ""
         
         # Extract only the content (body) from each result
-        contents = [res.get('content', '') for res in results.get("results", [])]
+        contents = [res.get('content', '') for res in search_res.get("results", [])]
         
         # Join them with newlines
         return "\n\n".join(filter(None, contents))
+
