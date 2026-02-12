@@ -15,8 +15,8 @@ def crawl_meeting_minutes(url, cookies_str=None):
     transcript_content = ""
     
     with sync_playwright() as p:
-        # 启动 Chromium 浏览器，headless=False 以便用户可见并登录
-        browser = p.chromium.launch(headless=False, slow_mo=1000)
+        # 启动 Chromium 浏览器，headless=True 后台运行
+        browser = p.chromium.launch(headless=True, slow_mo=1000)
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
@@ -45,10 +45,9 @@ def crawl_meeting_minutes(url, cookies_str=None):
             # 等待登录
             # ------------------------------------------------------------------
             print("\n" + "="*60)
-            print(">>> 请在弹出的浏览器中手动登录。")
-            print(">>> 登录成功并看到会议内容后，请在此处按【回车键】继续...")
+            print(">>> 正在等待页面加载 (5秒)...")
             print("="*60 + "\n")
-            input() # 等待用户按回车
+            time.sleep(5) # 自动等待5秒，不进行手动交互
 
             # ==================== 1. 获取【纪要】 ====================
             print("正在获取【纪要】数据...")
