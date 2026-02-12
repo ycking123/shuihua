@@ -212,10 +212,35 @@ def extract_json_values(text: str, key: str) -> List[str]:
 def normalize_transcript(text: str) -> str:
     if not text:
         return ""
+    
+    # 1. 基础清洗
     text = text.replace("\u3000", " ").replace("\r", " ").replace("\t", " ")
+    
+    # 2. 移除常见的 UI 导航词 (尤其是出现在开头或单独一行的)
+    ui_words = ["返回", "更多", "分享", "收藏", "搜索", "全部", "只看", "导出", "翻译", "倍速"]
+    lines = text.split('\n')
+    cleaned_lines = []
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        # 跳过极短的 UI 词
+        if len(line) <= 4 and line in ui_words:
+            continue
+        # 跳过纯时间戳 (如果不是跟在名字后面的话，不过这里简单处理)
+        # if re.match(r'^\d{1,2}:\d{2}$', line):
+        #    continue
+            
+        cleaned_lines.append(line)
+    
+    text = " ".join(cleaned_lines)
+    
+    # 3. 标点符号规范化与分行
     text = re.sub(r"\s{2,}", " ", text)
     text = text.replace("。", "。\n").replace("！", "！\n").replace("？", "？\n")
     text = re.sub(r"\n{2,}", "\n", text)
+    
     return text.strip()
 
 def split_speaker_segments(text: str) -> List[Tuple[str, str]]:
@@ -373,12 +398,15 @@ def crawl_and_parse_meeting(url: str, cookies_str: Optional[str] = None) -> Opti
     if not html:
         return None
     parsed = parse_meeting_page(html)
-    if not parsed.get("summary") and not parsed.get("todos"):
+    
+    # 只要 summary 或 todos 为空，就尝试 fallback，但不要覆盖已有的值
+    if not parsed.get("summary") or not parsed.get("todos"):
         fallback = parse_meeting_html(html)
-        if fallback.get("minutes_text"):
+        if fallback.get("minutes_text") and not parsed.get("summary"):
             parsed["summary"] = fallback.get("minutes_text", "")
-        if fallback.get("title") and parsed.get("title") == "会议纪要":
+        if fallback.get("title") and (not parsed.get("title") or parsed.get("title") == "会议纪要"):
             parsed["title"] = fallback.get("title")
+            
     return parsed
 
 def fetch_content_with_cookies(url: str, cookies_str: Optional[str]) -> Optional[str]:

@@ -4,38 +4,52 @@ import os
 import re
 import time
 import requests
+import logging
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
-from zhipuai import ZhipuAI
+
+# 配置日志
+logger = logging.getLogger("AIHandler")
+
+try:
+    from zhipuai import ZhipuAI
+except ImportError:
+    ZhipuAI = None
+    logger.error("❌ 未安装 zhipuai 库，AI 功能将不可用")
 
 # 加载环境变量
 env_path = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
-ZHIPU_API_KEY = os.getenv("ZHIPUAI_API_KEY")
+ZHIPU_API_KEY = os.getenv("ZHIPUAI_API_KEY") or os.getenv("Zhipuai_API_KEY")
 if not ZHIPU_API_KEY:
     # 尝试从 root .env.local 加载
     root_env_path = Path(__file__).parent.parent / ".env.local"
     load_dotenv(dotenv_path=root_env_path)
-    ZHIPU_API_KEY = os.getenv("ZHIPUAI_API_KEY")
+    ZHIPU_API_KEY = os.getenv("ZHIPUAI_API_KEY") or os.getenv("Zhipuai_API_KEY")
 
 if not ZHIPU_API_KEY:
     # 尝试读取 LOCAL_ZHIPU_APIKEY (兼容 server/routers/chat.py 的配置)
     ZHIPU_API_KEY = os.getenv("LOCAL_ZHIPU_APIKEY")
 
-client = ZhipuAI(api_key=ZHIPU_API_KEY)
-
+client = None
+if ZhipuAI and ZHIPU_API_KEY:
+    try:
+        client = ZhipuAI(api_key=ZHIPU_API_KEY)
+    except Exception as e:
+        logger.error(f"❌ ZhipuAI 客户端初始化失败: {e}")
 
 def analyze_chat_screenshot_with_glm4v(base64_image_data):
     """
     【AI 核心环节】
     使用 GLM-4V 分析图片，提取待办事项
     """
-    if not base64_image_data:
+    if not base64_image_data or not client:
+        logger.warning("⚠️ 无法分析图片: 图片数据为空或客户端未初始化")
         return None
 
-    print("🤖 开始调用 GLM-4V 模型进行分析，请稍候...")
+    logger.info("🤖 开始调用 GLM-4V 模型进行分析，请稍候...")
 
     system_prompt = """
     你是一个智能企业微信待办事项提取助手，严格遵循以下要求提取信息并返回结果：
@@ -221,7 +235,9 @@ def extract_todos_from_text(text_content):
     """
     从文本中提取待办事项
     """
-    if not text_content:
+    if not text_content or not client:
+        if not client:
+            logger.warning("⚠️ AI 客户端未初始化，跳过文本提取")
         return None
 
     system_prompt = """
@@ -239,7 +255,7 @@ def extract_todos_from_text(text_content):
     2.  JSON 结构严格遵循以下示例，字段不可增减、格式不可修改。
     JSON 结构示例：
     {
-      "summary": "待办事项汇总（简要概括所有任务核心）",
+      "summary": "（这里必须生成一段针对输入文本的简要总结，概括核心议题和结论，不要抄示例）",
       "task_list": [
         {
           "title": "撰写XX产品需求文档（V1.0版本）",
@@ -254,12 +270,15 @@ def extract_todos_from_text(text_content):
     
     current_time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
+    # 截断过长的文本，防止 token 溢出 (保留前 50000 字符)
+    truncated_content = text_content[:50000] if text_content else ""
+
     try:
         response = client.chat.completions.create(
             model="glm-4",
             messages=[
                 {"role": "system", "content": f"{system_prompt}\n\n【当前系统时间】：{current_time_str}"},
-                {"role": "user", "content": text_content}
+                {"role": "user", "content": truncated_content}
             ],
             temperature=0.1,
         )
@@ -284,7 +303,7 @@ def extract_todos_from_text(text_content):
             return None
 
     except Exception as e:
-        print(f"❌ 文本待办提取失败: {e}")
+        logger.error(f"❌ 文本待办提取失败: {e}")
         return None
 
 def analyze_text_message(text_content):
