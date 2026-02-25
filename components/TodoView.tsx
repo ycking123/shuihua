@@ -1,17 +1,32 @@
+// ============================================================================
+// 文件: TodoView.tsx
+// 模块: components
+// 职责: 待办事项管理界面，支持会议关联待办和个人待办的展示和编辑
+//
+// 依赖声明:
+//   - 外部: react, react-dom, lucide-react
+//   - 本项目: constants (TODOS_DATA), types (ViewType)
+//
+// 主要组件:
+//   - TodoView: 主组件，渲染待办事项列表和详情
+//
+// ============================================================================
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { 
-  CheckSquare, Sparkles, ChevronLeft, Search, 
+import {
+  CheckSquare, Sparkles, ChevronLeft, Search,
   Layers, Inbox, Coffee, ShieldCheck, Trash2,
   Target, ArrowRight, PenLine, User, AlertCircle, Clock, Info,
-  MessageSquare, FileText, Calendar, Link as LinkIcon, X
+  MessageSquare, FileText, Calendar, Link as LinkIcon, X, Plus, Check, Edit2
 } from 'lucide-react';
 import { TODOS_DATA } from '../constants';
 import { ViewType } from '../types';
 
 type TodoCategory = 'all' | 'email' | 'meeting' | 'approval' | 'chat_record' | 'meeting_minutes';
 type PriorityType = 'urgent' | 'high' | 'normal';
+
+type SortByType = 'created_at' | 'meeting_time';
 
 interface TaskItem {
   id: string | number;
@@ -26,6 +41,19 @@ interface TaskItem {
   aiAction?: string;
   content?: string;
   isUserTask?: boolean;
+  source_message_id?: string;
+}
+
+// 会议关联的待办事项
+interface MeetingTodo {
+  id: string;
+  title: string;
+  content?: string;
+  priority: string;
+  status: string;
+  assignee?: string;
+  due_at?: string;
+  created_at?: string;
 }
 
 interface MeetingItem {
@@ -36,6 +64,7 @@ interface MeetingItem {
   summary: string;
   transcript: string;
   organizer_id?: string;
+  todos_count?: number;
 }
 
 interface TodoViewProps {
@@ -58,14 +87,128 @@ const PriorityTag: React.FC<{ priority: string }> = ({ priority }) => {
 
 const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
   const [selectedItem, setSelectedItem] = useState<any | null>(null);
-  const [selectedMeeting, setSelectedMeeting] = useState<MeetingItem | null>(null); // New state for meeting detail
+  const [selectedMeeting, setSelectedMeeting] = useState<MeetingItem | null>(null);
+  const [meetingTodos, setMeetingTodos] = useState<MeetingTodo[]>([]); // 会议关联的待办
   const [activeCategory, setActiveCategory] = useState<TodoCategory>('all');
+  const [sortBy, setSortBy] = useState<SortByType>('created_at'); // 排序方式
   const [userTasks, setUserTasks] = useState<TaskItem[]>([]);
-  const [backendTasks, setBackendTasks] = useState<TaskItem[]>([]); // New state for backend tasks
-  const [meetingMinutes, setMeetingMinutes] = useState<MeetingItem[]>([]); // New state for meetings
+  const [backendTasks, setBackendTasks] = useState<TaskItem[]>([]);
+  const [meetingMinutes, setMeetingMinutes] = useState<MeetingItem[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState<PriorityType>('high');
   const [isInputFocused, setIsInputFocused] = useState(false);
+  
+  // 待办编辑状态
+  const [editingTodo, setEditingTodo] = useState<MeetingTodo | null>(null);
+  const [editForm, setEditForm] = useState({ title: '', content: '', priority: 'normal' });
+  const [isAddingTodo, setIsAddingTodo] = useState(false);
+  const [newTodoForm, setNewTodoForm] = useState({ title: '', content: '', priority: 'normal' });
+  
+  // 获取 API 基础 URL
+  const getBaseUrl = () => {
+    if (import.meta.env.DEV) return '/api';
+    return `http://${window.location.hostname}:8000/api`;
+  };
+  
+  // 获取请求头
+  const getHeaders = () => {
+    const headers: HeadersInit = { 'Content-Type': 'application/json' };
+    const token = localStorage.getItem('token');
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    return headers;
+  };
+  
+  // 获取会议关联的待办事项
+  const fetchMeetingTodos = async (meetingId: string) => {
+    try {
+      const res = await fetch(`${getBaseUrl()}/meetings/${meetingId}/todos`, { headers: getHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setMeetingTodos(data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch meeting todos:', e);
+    }
+  };
+  
+  // 打开会议详情时加载待办
+  useEffect(() => {
+    if (selectedMeeting) {
+      fetchMeetingTodos(selectedMeeting.id);
+      setIsAddingTodo(false);
+      setEditingTodo(null);
+    }
+  }, [selectedMeeting]);
+  
+  // 更新待办
+  const handleUpdateTodo = async () => {
+    if (!editingTodo) return;
+    try {
+      const res = await fetch(`${getBaseUrl()}/todos/${editingTodo.id}`, {
+        method: 'PUT',
+        headers: getHeaders(),
+        body: JSON.stringify(editForm)
+      });
+      if (res.ok) {
+        fetchMeetingTodos(selectedMeeting!.id);
+        setEditingTodo(null);
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        console.error('Update failed:', errorData);
+        alert(`保存失败: ${errorData.detail || '请检查网络或登录状态'}`);
+      }
+    } catch (e) {
+      console.error('Failed to update todo:', e);
+      alert('保存失败，请检查网络连接');
+    }
+  };
+  
+  // 删除待办
+  const handleDeleteTodo = async (todoId: string) => {
+    if (!confirm('确定要删除这个待办吗？')) return;
+    try {
+      const res = await fetch(`${getBaseUrl()}/todos/${todoId}`, {
+        method: 'DELETE',
+        headers: getHeaders()
+      });
+      if (res.ok) {
+        fetchMeetingTodos(selectedMeeting!.id);
+      }
+    } catch (e) {
+      console.error('Failed to delete todo:', e);
+    }
+  };
+  
+  // 新增待办
+  const handleAddTodo = async () => {
+    if (!newTodoForm.title.trim() || !selectedMeeting) return;
+    try {
+      const res = await fetch(`${getBaseUrl()}/todos`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({
+          ...newTodoForm,
+          type: 'meeting',
+          status: 'pending',
+          sender: '会议助手',
+          source_message_id: selectedMeeting.id,
+          source_origin: 'meeting_minutes'
+        })
+      });
+      if (res.ok) {
+        fetchMeetingTodos(selectedMeeting.id);
+        setNewTodoForm({ title: '', content: '', priority: 'normal' });
+        setIsAddingTodo(false);
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        console.error('Add failed:', errorData);
+        alert(`保存失败: ${errorData.detail || '请检查网络或登录状态'}`);
+      }
+    } catch (e) {
+      console.error('Failed to add todo:', e);
+      alert('保存失败，请检查网络连接');
+    }
+  };
 
   // Fetch tasks and meetings from backend on mount
   React.useEffect(() => {
@@ -89,8 +232,8 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
             headers['Authorization'] = `Bearer ${token}`;
         }
 
-        // Fetch Todos
-        const resTodos = await fetch(`${baseUrl}/todos`, { headers });
+        // Fetch Todos with sort parameter
+        const resTodos = await fetch(`${baseUrl}/todos?sort_by=${sortBy}`, { headers });
         if (resTodos.ok) {
           const data = await resTodos.json();
           setBackendTasks(data);
@@ -111,7 +254,7 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
     // Poll every 5 seconds for updates
     const interval = setInterval(fetchData, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [sortBy]); // Add sortBy as dependency
 
   const categories = [
     { id: 'all', label: '全部待办', icon: Layers },
@@ -235,6 +378,35 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
               </button>
             );
           })}
+        </div>
+                
+        {/* 排序切换 */}
+        <div className="flex items-center gap-2 mt-3">
+          <span className="text-[9px] text-slate-400 dark:text-slate-500 uppercase tracking-wider">排序:</span>
+          <div className="flex gap-1">
+            <button
+              onClick={() => setSortBy('created_at')}
+              className={`px-3 py-1 rounded-full text-[10px] font-medium transition-colors ${
+                sortBy === 'created_at' 
+                  ? 'bg-blue-600 text-white' 
+                  : 'bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10'
+              }`}
+            >
+              <Clock size={10} className="inline mr-1" />
+              生成时间
+            </button>
+            <button
+              onClick={() => setSortBy('meeting_time')}
+              className={`px-3 py-1 rounded-full text-[10px] font-medium transition-colors ${
+                sortBy === 'meeting_time' 
+                  ? 'bg-blue-600 text-white' 
+                  : 'bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10'
+              }`}
+            >
+              <Calendar size={10} className="inline mr-1" />
+              会议时间
+            </button>
+          </div>
         </div>
       </div>
 
@@ -448,7 +620,7 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
         document.body
       )}
 
-      {/* 会议详情抽屉 */}
+      {/* 会议详情抽屉 - 三大模块展示 */}
       {selectedMeeting && createPortal(
         <div className="fixed inset-0 z-[200] bg-white dark:bg-black animate-in slide-in-from-right duration-300 flex flex-col transition-colors duration-500">
           <div className="shrink-0 bg-white/95 dark:bg-black/95 backdrop-blur-xl border-b border-slate-200 dark:border-white/5 p-4 flex items-center justify-between z-50 shadow-sm safe-area-top">
@@ -462,49 +634,193 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
             <div className="text-[9px] font-bold text-slate-400 dark:text-slate-600 tracking-[0.3em] uppercase">会议纪要详情</div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6 space-y-8 pb-32 safe-area-bottom">
-             <div className="space-y-4">
+          <div className="flex-1 overflow-y-auto p-6 space-y-6 pb-32 safe-area-bottom">
+             {/* 会议主题和时间 */}
+             <div className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-mono-prec text-blue-600 dark:text-blue-500">{new Date(selectedMeeting.start_time).toLocaleString()}</span>
+                  <span className="text-xs font-mono text-blue-600 dark:text-blue-500">
+                    {new Date(selectedMeeting.start_time).toLocaleString()}
+                  </span>
                 </div>
-                <h1 className="text-2xl font-bold leading-tight text-slate-900 dark:text-white">{selectedMeeting.title}</h1>
-                
-                {selectedMeeting.location && (selectedMeeting.location.startsWith('http') ? (
-                    <a href={selectedMeeting.location} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-blue-600 hover:underline">
-                        <LinkIcon size={14} />
-                        <span className="text-sm truncate">{selectedMeeting.location}</span>
-                    </a>
-                ) : (
-                    <div className="flex items-center gap-2 text-slate-500">
-                        <Target size={14} />
-                        <span className="text-sm">{selectedMeeting.location}</span>
-                    </div>
-                ))}
+                <h1 className="text-xl font-bold leading-tight text-slate-900 dark:text-white">{selectedMeeting.title}</h1>
              </div>
-
-             <div className="space-y-4">
+             
+             {/* 模块一：会议链接 */}
+             <div className="space-y-3">
                 <div className="text-[10px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest flex items-center gap-2">
                     <div className="h-px flex-1 bg-slate-200 dark:bg-white/5"></div>
-                    纪要摘要
+                    <LinkIcon size={12} />
+                    会议链接
                     <div className="h-px flex-1 bg-slate-200 dark:bg-white/5"></div>
                 </div>
-                <div className="text-slate-600 dark:text-slate-300 text-[15px] leading-relaxed font-light whitespace-pre-wrap px-2 bg-slate-50 dark:bg-white/5 p-4 rounded-xl">
+                <div className="bg-slate-50 dark:bg-white/5 p-4 rounded-xl">
+                  {selectedMeeting.location && selectedMeeting.location.startsWith('http') ? (
+                      <a href={selectedMeeting.location} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-blue-600 hover:underline">
+                          <LinkIcon size={14} />
+                          <span className="text-sm break-all">{selectedMeeting.location}</span>
+                      </a>
+                  ) : (
+                      <div className="flex items-center gap-2 text-slate-500">
+                          <Target size={14} />
+                          <span className="text-sm">{selectedMeeting.location || '无会议链接'}</span>
+                      </div>
+                  )}
+                </div>
+             </div>
+
+             {/* 模块二：会议纪要正文 */}
+             <div className="space-y-3">
+                <div className="text-[10px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest flex items-center gap-2">
+                    <div className="h-px flex-1 bg-slate-200 dark:bg-white/5"></div>
+                    <FileText size={12} />
+                    会议纪要正文
+                    <div className="h-px flex-1 bg-slate-200 dark:bg-white/5"></div>
+                </div>
+                <div className="text-slate-600 dark:text-slate-300 text-[15px] leading-relaxed font-light whitespace-pre-wrap bg-slate-50 dark:bg-white/5 p-4 rounded-xl">
                     {selectedMeeting.summary || "暂无摘要"}
                 </div>
              </div>
              
-             {selectedMeeting.transcript && (
-                 <div className="space-y-4">
-                    <div className="text-[10px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest flex items-center gap-2">
-                        <div className="h-px flex-1 bg-slate-200 dark:bg-white/5"></div>
-                        详细记录
-                        <div className="h-px flex-1 bg-slate-200 dark:bg-white/5"></div>
+             {/* 模块三：会议待办事项 */}
+             <div className="space-y-3">
+                <div className="text-[10px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest flex items-center gap-2">
+                    <div className="h-px flex-1 bg-slate-200 dark:bg-white/5"></div>
+                    <CheckSquare size={12} />
+                    会议待办事项 ({meetingTodos.length})
+                    <div className="h-px flex-1 bg-slate-200 dark:bg-white/5"></div>
+                </div>
+                
+                <div className="space-y-2">
+                  {/* 新增待办按钮 */}
+                  {!isAddingTodo && (
+                    <button
+                      onClick={() => setIsAddingTodo(true)}
+                      className="w-full py-3 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-xl text-slate-500 dark:text-slate-400 text-sm font-medium hover:border-blue-400 hover:text-blue-600 dark:hover:border-blue-500 dark:hover:text-blue-400 transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Plus size={16} />
+                      新增待办
+                    </button>
+                  )}
+                  
+                  {/* 新增待办表单 */}
+                  {isAddingTodo && (
+                    <div className="bg-blue-50 dark:bg-blue-500/10 p-4 rounded-xl space-y-3">
+                      <input
+                        type="text"
+                        placeholder="待办标题"
+                        value={newTodoForm.title}
+                        onChange={(e) => setNewTodoForm({...newTodoForm, title: e.target.value})}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-black/50 text-slate-900 dark:text-white text-sm"
+                      />
+                      <textarea
+                        placeholder="待办详情（可选）"
+                        value={newTodoForm.content}
+                        onChange={(e) => setNewTodoForm({...newTodoForm, content: e.target.value})}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-black/50 text-slate-900 dark:text-white text-sm resize-none"
+                        rows={2}
+                      />
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={newTodoForm.priority}
+                          onChange={(e) => setNewTodoForm({...newTodoForm, priority: e.target.value})}
+                          className="px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-black/50 text-slate-900 dark:text-white text-sm"
+                        >
+                          <option value="urgent">紧急</option>
+                          <option value="high">重要</option>
+                          <option value="normal">普通</option>
+                        </select>
+                        <button
+                          onClick={handleAddTodo}
+                          className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+                        >
+                          保存
+                        </button>
+                        <button
+                          onClick={() => { setIsAddingTodo(false); setNewTodoForm({ title: '', content: '', priority: 'normal' }); }}
+                          className="px-4 py-2 bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-400 rounded-lg text-sm"
+                        >
+                          取消
+                        </button>
+                      </div>
                     </div>
-                    <div className="text-slate-600 dark:text-slate-300 text-[14px] leading-relaxed font-light whitespace-pre-wrap px-2">
-                        {selectedMeeting.transcript}
+                  )}
+                  
+                  {/* 待办列表 */}
+                  {meetingTodos.map((todo) => (
+                    <div key={todo.id} className="bg-slate-50 dark:bg-white/5 p-4 rounded-xl">
+                      {editingTodo?.id === todo.id ? (
+                        /* 编辑模式 */
+                        <div className="space-y-3">
+                          <input
+                            type="text"
+                            value={editForm.title}
+                            onChange={(e) => setEditForm({...editForm, title: e.target.value})}
+                            className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-black/50 text-slate-900 dark:text-white text-sm"
+                          />
+                          <textarea
+                            value={editForm.content || ''}
+                            onChange={(e) => setEditForm({...editForm, content: e.target.value})}
+                            className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-black/50 text-slate-900 dark:text-white text-sm resize-none"
+                            rows={2}
+                          />
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={editForm.priority}
+                              onChange={(e) => setEditForm({...editForm, priority: e.target.value})}
+                              className="px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-black/50 text-slate-900 dark:text-white text-sm"
+                            >
+                              <option value="urgent">紧急</option>
+                              <option value="high">重要</option>
+                              <option value="normal">普通</option>
+                            </select>
+                            <button onClick={handleUpdateTodo} className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium">保存</button>
+                            <button onClick={() => setEditingTodo(null)} className="px-4 py-2 bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-400 rounded-lg text-sm">取消</button>
+                          </div>
+                        </div>
+                      ) : (
+                        /* 展示模式 */
+                        <div className="flex items-start gap-3">
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
+                            todo.status === 'completed' ? 'bg-green-500 border-green-500' : 'border-slate-300 dark:border-white/20'
+                          }`}>
+                            {todo.status === 'completed' && <Check size={12} className="text-white" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-sm font-medium text-slate-900 dark:text-white">{todo.title}</span>
+                              <PriorityTag priority={todo.priority} />
+                            </div>
+                            {todo.content && (
+                              <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2">{todo.content}</p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              onClick={() => { setEditingTodo(todo); setEditForm({ title: todo.title, content: todo.content || '', priority: todo.priority }); }}
+                              className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteTodo(todo.id)}
+                              className="p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-500/20 text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                 </div>
-             )}
+                  ))}
+                  
+                  {meetingTodos.length === 0 && !isAddingTodo && (
+                    <div className="text-center py-8 text-slate-400 dark:text-slate-500">
+                      <CheckSquare size={32} className="mx-auto mb-2 opacity-30" />
+                      <p className="text-sm">暂无待办事项</p>
+                    </div>
+                  )}
+                </div>
+             </div>
           </div>
         </div>,
         document.body

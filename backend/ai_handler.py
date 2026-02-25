@@ -1,3 +1,20 @@
+# ============================================================================
+# 文件: ai_handler.py
+# 模块: backend
+# 职责: AI 文本分析，使用智谱 AI 从会议文本中提取待办事项和摘要
+#
+# 依赖声明:
+#   - 外部: base64, json, os, re, time, requests, logging, datetime, pathlib, dotenv
+#   - 可选: zhipuai (ZhipuAI) - 智谱 AI SDK
+#
+# 主要接口:
+#   - extract_todos_from_text(text) -> Dict: 从会议文本提取待办事项和摘要
+#
+# 环境变量:
+#   - ZHIPUAI_API_KEY / Zhipuai_API_KEY: 智谱 AI API 密钥
+#
+# ============================================================================
+
 import base64
 import json
 import os

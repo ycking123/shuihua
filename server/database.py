@@ -1,3 +1,26 @@
+# ============================================================================
+# 文件: database.py
+# 模块: server
+# 职责: 数据库连接管理，提供 SQLAlchemy 引擎和 Session 工厂
+#
+# 依赖声明:
+#   - 外部: os, sqlalchemy, dotenv
+#
+# 主要接口:
+#   - engine: SQLAlchemy 引擎实例
+#   - Base: ORM 模型基类 (declarative_base)
+#   - get_db(): 依赖注入函数，返回数据库 Session
+#   - init_db(): 初始化数据库（如果不存在）
+#
+# 环境变量:
+#   - DB_USER: 数据库用户名 (默认: root)
+#   - DB_PASSWORD: 数据库密码 (默认: 123456)
+#   - DB_HOST: 数据库主机 (默认: localhost)
+#   - DB_PORT: 数据库端口 (默认: 3306)
+#   - DB_NAME: 数据库名称 (默认: shuihua)
+#
+# ============================================================================
+
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base, Session

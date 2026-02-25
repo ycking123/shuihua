@@ -1,15 +1,369 @@
+# ============================================================================
+# 文件: url_crawler.py
+# 模块: backend
+# 职责: 会议 URL 爬虫，负责从腾讯会议等平台爬取会议数据
+#
+# 依赖声明:
+#   - 外部: requests, logging, re, json, html, time, random, string, difflib, typing, urllib.parse
+#   - 本模块: backend.ai_handler (extract_todos_from_text)
+#   - 可选: backend.crawl_with_browser (crawl_meeting_minutes) - PLAYWRIGHT_AVAILABLE 标志位
+#
+# 主要接口:
+#   - crawl_and_parse_meeting(url, cookies_str) -> Dict: 主入口，爬取会议数据
+#   - crawl_meeting_api(share_url, user_cookie) -> Dict: API 爬虫方法
+#   - crawl_meeting_transcript_api(share_url, user_cookie) -> str: 获取会议转写
+#   - crawl_meeting_summary_api(share_url, user_cookie) -> Dict: 获取会议摘要
+#
+# ============================================================================
+
 import requests
 import logging
 import re
 import json
 import html as html_lib
+import time
+import random
+import string
 from difflib import SequenceMatcher
 from typing import Optional, Dict, Any, List, Tuple
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse, parse_qs
 from backend.ai_handler import extract_todos_from_text
-from backend.crawl_with_browser import crawl_meeting_minutes
+
+# Playwright 浏览器爬虫为可选依赖（API 爬虫不需要）
+try:
+    from backend.crawl_with_browser import crawl_meeting_minutes
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    crawl_meeting_minutes = None
+    PLAYWRIGHT_AVAILABLE = False
 
 logger = logging.getLogger("URLCrawler")
+
+# ============================================================================
+# 新的 API 爬虫方法 (基于 tecent.py 和 summary.py)
+# ============================================================================
+
+def get_random_str(length=9):
+    """生成随机字符串用于指纹校验"""
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
+
+def _maybe_decode_base64_text(value: str) -> str:
+    if not value:
+        return value
+    try:
+        import base64
+        decoded = base64.b64decode(value).decode("utf-8")
+        return decoded or value
+    except Exception:
+        return value
+
+def get_all_recording_ids(share_url, user_cookie: Optional[str] = None):
+    """
+    获取会议所有录制片段的 ID
+    返回: (sharing_id, meeting_id, recording_list)
+    """
+    parsed_url = urlparse(share_url)
+    query_params = parse_qs(parsed_url.query)
+    sharing_id = query_params.get('id', [None])[0]
+    
+    api_url = "https://meeting.tencent.com/wemeet-tapi/v2/meetlog/public/detail/common-record-info"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Content-Type": "application/json",
+        "Referer": share_url
+    }
+    if user_cookie:
+        headers["Cookie"] = user_cookie
+    payload = {"sharing_id": sharing_id, "is_single": False, "lang": "zh", "forward_cgi_path": "shares", "enter_from": "share"}
+
+    try:
+        response = requests.post(api_url, json=payload, headers=headers, timeout=10)
+        res_data = response.json()
+        data = res_data.get("data", {})
+        
+        recordings = data.get("recordings", [])
+        recording_list = []
+        for rec in recordings:
+            recording_list.append({"id": rec.get("id"), "topic": rec.get("topic")})
+        
+        return sharing_id, data.get("meeting_info", {}).get("meeting_id"), recording_list
+    except Exception as e:
+        logger.error(f"获取录制 ID 失败: {e}")
+        return None, None, []
+
+def crawl_meeting_transcript_api(share_url, user_cookie: Optional[str] = None):
+    """
+    使用 API 爬取完整的会议转写内容 (基于 tecent.py)
+    返回: 按发言人分组的转写文本
+    """
+    sharing_id, meeting_id, recording_list = get_all_recording_ids(share_url, user_cookie)
+    
+    if not recording_list:
+        logger.warning("未获取到录制片段")
+        return ""
+
+    detail_api_url = "https://meeting.tencent.com/wemeet-cloudrecording-webapi/v1/minutes/detail"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 Edg/145.0.0.0",
+        "Referer": "https://meeting.tencent.com/"
+    }
+    if user_cookie:
+        headers["Cookie"] = user_cookie
+
+    transcript_lines = []
+    last_speaker = None
+    merged_content = ""
+
+    for rec_info in recording_list:
+        rec_id = rec_info['id']
+        current_pid = "0"
+        
+        while True:
+            params = {
+                "id": sharing_id,
+                "meeting_id": meeting_id,
+                "recording_id": rec_id,
+                "platform": "Web",
+                "lang": "zh",
+                "pid": current_pid,
+                "minutes_version": 0,
+                "limit": 50
+            }
+            
+            try:
+                response = requests.get(detail_api_url, headers=headers, params=params, timeout=10)
+                res_json = response.json()
+                
+                data_root = res_json if "minutes" in res_json else res_json.get("data", {})
+                minutes_obj = data_root.get("minutes", {})
+                paragraphs = minutes_obj.get("paragraphs", [])
+                
+                if not paragraphs:
+                    break
+
+                for p in paragraphs:
+                    speaker = p.get("speaker", {}).get("user_name", "未知")
+                    text = "".join(["".join([w.get("text", "") for w in s.get("words", [])]) for s in p.get("sentences", [])])
+
+                    if speaker == last_speaker:
+                        merged_content += text
+                    else:
+                        if last_speaker:
+                            transcript_lines.append(f"【{last_speaker}】: {merged_content}")
+                        last_speaker = speaker
+                        merged_content = text
+
+                server_has_more = data_root.get("has_more", minutes_obj.get("has_more", False))
+                next_pid = data_root.get("next_pid", minutes_obj.get("next_pid", 0))
+
+                if next_pid and str(next_pid) != "0" and str(next_pid) != str(current_pid):
+                    current_pid = str(next_pid)
+                elif paragraphs:
+                    last_pid_in_page = str(paragraphs[-1].get("pid"))
+                    if last_pid_in_page != current_pid:
+                        current_pid = last_pid_in_page
+                    else:
+                        break
+                else:
+                    break
+                    
+            except Exception as e:
+                logger.error(f"爬取转写中断: {e}")
+                break
+    
+    if last_speaker:
+        transcript_lines.append(f"【{last_speaker}】: {merged_content}")
+    
+    return "\n\n".join(transcript_lines)
+
+def get_meeting_params(share_url, user_cookie: Optional[str] = None):
+    """通过分享链接自动获取 sharing_id, meeting_id 和 record_id"""
+    parsed_url = urlparse(share_url)
+    query_params = parse_qs(parsed_url.query)
+    sharing_id = query_params.get('id', [None])[0]
+    
+    if not sharing_id:
+        logger.error("无法从 URL 中解析出 ID")
+        return None, None, None
+
+    api_url = "https://meeting.tencent.com/wemeet-tapi/v2/meetlog/public/detail/common-record-info"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Content-Type": "application/json",
+        "Referer": share_url
+    }
+    if user_cookie:
+        headers["Cookie"] = user_cookie
+    payload = {
+        "sharing_id": sharing_id, 
+        "is_single": False, 
+        "lang": "zh", 
+        "forward_cgi_path": "shares", 
+        "enter_from": "share"
+    }
+
+    try:
+        response = requests.post(api_url, json=payload, headers=headers, timeout=10)
+        res_data = response.json()
+        data = res_data.get("data", {})
+        meeting_id = data.get("meeting_info", {}).get("meeting_id")
+        meeting_title = data.get("meeting_info", {}).get("subject", "会议纪要")
+        if meeting_title:
+            meeting_title = _maybe_decode_base64_text(meeting_title)
+        recordings = data.get("recordings", [])
+        record_id = recordings[0].get("id") if recordings else None
+        return sharing_id, meeting_id, record_id, meeting_title
+    except Exception as e:
+        logger.error(f"获取会议参数失败: {e}")
+        return None, None, None, None
+
+def crawl_meeting_summary_api(share_url, user_cookie: Optional[str] = None):
+    """
+    使用 API 爬取会议 AI 摘要和待办 (基于 summary.py)
+    返回: { title, summary, transcript, todos, personal_todos }
+    """
+    result = get_meeting_params(share_url, user_cookie)
+    if not result or not all(result[:3]):
+        return None
+    
+    share_id, meeting_id, record_id, meeting_title = result
+
+    nonce = get_random_str(9)
+    timestamp = str(int(time.time() * 1000))
+    trace_id = get_random_str(32).lower()
+
+    api_url = (
+        f"https://meeting.tencent.com/wemeet-tapi/v2/meetlog/public/record-detail/get-mul-summary-and-todo?"
+        f"c_timestamp={timestamp}&c_nonce={nonce}&meeting_id={meeting_id}&trace-id={trace_id}&c_lang=zh-CN"
+    )
+
+    payload = {
+        "record_id": record_id,
+        "meeting_id": meeting_id,
+        "lang": "zh",
+        "share_id": share_id,
+        "summary_type": 0
+    }
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Content-Type": "application/json",
+        "Referer": share_url
+    }
+    if user_cookie:
+        headers["Cookie"] = user_cookie
+
+    try:
+        response = requests.post(api_url, headers=headers, json=payload, timeout=10)
+        res_json = response.json()
+        
+        if res_json.get("code") != 0:
+            logger.warning(f"API 返回错误: {res_json.get('message')}")
+            return None
+
+        data = res_json.get("data", {})
+        
+        # 解析结果
+        summary_parts = []
+        todos = []
+        
+        # 1. DeepSeek 智能总结
+        ds_summary = data.get("deepseek_summary", {}).get("topic_summary", {})
+        if ds_summary:
+            begin = ds_summary.get("begin_summary", "")
+            if begin:
+                summary_parts.append(f"【AI 智能总览】\n{begin}")
+            for point in ds_summary.get("sub_points", []):
+                title = point.get('sub_point_title', '')
+                summary_parts.append(f"\n# {title}")
+                for item in point.get("sub_point_vec_items", []):
+                    summary_parts.append(f" • {item.get('point', '')}")
+        
+        # 2. 章节概览
+        chapters = data.get("chapter_summary", {}).get("summary_list", [])
+        if chapters:
+            chapter_text = "\n【章节内容详情】"
+            for idx, c in enumerate(chapters, 1):
+                chapter_text += f"\n{idx}. {c.get('title', '')}\n   内容: {c.get('summary', '')}"
+            summary_parts.append(chapter_text)
+        
+        # 3. 发言人总结
+        speakers = data.get("speaker_summary", {}).get("speakers_opinions", [])
+        if speakers:
+            speaker_text = "\n【发言人观点整合】"
+            for s in speakers:
+                speaker_id = s.get('speaker_id', '未知')
+                speaker_text += f"\n发言人: {speaker_id}"
+                for sp in s.get("sub_points", []):
+                    speaker_text += f"\n  [{sp.get('sub_point_title', '')}]"
+                    for item in sp.get("sub_point_vec_items", []):
+                        speaker_text += f"\n   - {item.get('point', '')}"
+            summary_parts.append(speaker_text)
+        
+        # 4. 待办事项
+        todo_list = data.get("todo", {}).get("todo_list", [])
+        for t in todo_list:
+            todos.append({
+                "title": t.get("todo_name", "待办事项"),
+                "description": t.get("todo_name", ""),
+                "assignee": "待定",
+                "priority": "normal",
+                "due_date": ""
+            })
+        
+        summary_text = "\n".join(summary_parts)
+        
+        logger.info(f"✅ API 爬取成功: 获取摘要 {len(summary_text)} 字符, 待办 {len(todos)} 条")
+        
+        return {
+            "title": meeting_title or "会议纪要",
+            "summary": summary_text,
+            "transcript": "",  # 摘要 API 不返回完整转写
+            "todos": todos,
+            "personal_todos": todos  # 兼容旧结构
+        }
+        
+    except Exception as e:
+        logger.error(f"爬取摘要异常: {e}")
+        return None
+
+def crawl_meeting_api(share_url, user_cookie: Optional[str] = None):
+    """
+    新的 API 爬虫主入口 - 同时获取摘要和转写
+    """
+    logger.info(f"🚀 使用 API 爬虫模式爬取: {share_url}")
+    
+    # 1. 先获取摘要和待办
+    summary_result = crawl_meeting_summary_api(share_url, user_cookie)
+    
+    # 2. 再获取完整转写
+    transcript = crawl_meeting_transcript_api(share_url, user_cookie)
+    
+    # 3. 合并结果
+    if summary_result:
+        summary_result["transcript"] = transcript
+        # 如果 API 没有待办，从转写中提取
+        if not summary_result.get("todos") and transcript:
+            ai_result = extract_todos_from_text(transcript)
+            if ai_result:
+                summary_result["summary"] = summary_result.get("summary", "") or ai_result.get("summary", "")
+                summary_result["todos"] = ai_result.get("task_list", [])
+        # 生成 personal_todos
+        if transcript:
+            summary_result["personal_todos"] = build_personal_todos(transcript, summary_result.get("todos", []))
+        return summary_result
+    elif transcript:
+        # 只有转写，没有摘要
+        ai_result = extract_todos_from_text(transcript)
+        return {
+            "title": "会议纪要",
+            "summary": ai_result.get("summary", "") if ai_result else "",
+            "transcript": transcript,
+            "todos": ai_result.get("task_list", []) if ai_result else [],
+            "personal_todos": build_personal_todos(transcript, ai_result.get("task_list", []) if ai_result else [])
+        }
+    
+    return None
 
 def extract_meeting_url(text: str) -> Optional[str]:
     """
@@ -351,7 +705,7 @@ def build_personal_todos(transcript: str, meeting_todos: List[dict]) -> List[dic
                 "title": t,
                 "description": t,
                 "assignee": "Sender（发送者）",
-                "priority": "medium",
+                "priority": "normal",
                 "due_date": ""
             })
             continue
@@ -361,7 +715,7 @@ def build_personal_todos(transcript: str, meeting_todos: List[dict]) -> List[dic
             "title": t.get("title") or "会议待办",
             "description": t.get("description") or t.get("title") or "",
             "assignee": assignee,
-            "priority": t.get("priority") or "medium",
+            "priority": t.get("priority") or "normal",
             "due_date": t.get("due_date") or ""
         })
 
@@ -376,7 +730,7 @@ def build_personal_todos(transcript: str, meeting_todos: List[dict]) -> List[dic
                 "title": title,
                 "description": s,
                 "assignee": assignee,
-                "priority": "medium",
+                "priority": "normal",
                 "due_date": ""
             })
     return personal
@@ -442,10 +796,14 @@ def parse_meeting_page(html: str) -> Dict[str, Any]:
         "personal_todos": personal_todos or []
     }
 
-def crawl_and_parse_meeting(url: str, cookies_str: Optional[str] = None) -> Optional[Dict[str, Any]]:
+def crawl_and_parse_meeting_browser(url: str, cookies_str: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
-    使用 Playwright 浏览器爬虫获取会议内容 (替代原有的静态爬取)
+    [备用方法] 使用 Playwright 浏览器爬虫获取会议内容
     """
+    if not PLAYWRIGHT_AVAILABLE:
+        logger.error("❌ Playwright 未安装，浏览器爬虫不可用。请运行: pip install playwright && playwright install chromium")
+        return None
+    
     try:
         logger.info(f"🔄 切换到浏览器爬虫模式 (Playwright) 爬取: {url}")
         # 调用基于 pc.py 逻辑的浏览器爬虫
@@ -466,6 +824,41 @@ def crawl_and_parse_meeting(url: str, cookies_str: Optional[str] = None) -> Opti
     except Exception as e:
         logger.error(f"❌ 浏览器爬虫失败: {e}")
         return None
+
+def crawl_and_parse_meeting(url: str, cookies_str: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """
+    主爬虫入口 - 优先使用 API 爬虫，失败时回退到浏览器爬虫
+    
+    爬取策略：
+    1. 首先尝试 API 爬虫 (crawl_meeting_api) - 直接调用腾讯会议 API，速度快
+    2. 如果 API 爬虫失败，回退到浏览器爬虫 (crawl_and_parse_meeting_browser) - 使用 Playwright 模拟浏览器
+    """
+    # 1. 优先尝试 API 爬虫
+    # 策略 A: 如果有 cookie，先试带 cookie
+    if cookies_str:
+        try:
+            logger.info("尝试带 Cookie 进行 API 爬取...")
+            result = crawl_meeting_api(url, cookies_str)
+            if result:
+                logger.info("✅ 带 Cookie API 爬虫成功")
+                return result
+        except Exception as e:
+            logger.warning(f"⚠️ 带 Cookie API 爬虫失败: {e}")
+
+    # 策略 B: 尝试无 Cookie API 爬取 (公开链接)
+    try:
+        logger.info("尝试无 Cookie API 爬取...")
+        # 传入 None 作为 cookie，requests 会忽略 None 的 header
+        result = crawl_meeting_api(url, None)
+        if result:
+            logger.info("✅ 无 Cookie API 爬虫成功")
+            return result
+    except Exception as e:
+        logger.warning(f"⚠️ 无 Cookie API 爬虫失败: {e}")
+    
+    # 2. 回退到浏览器爬虫
+    logger.info("🔄 回退到浏览器爬虫模式...")
+    return crawl_and_parse_meeting_browser(url, cookies_str)
 
 # 原有的静态爬取逻辑保留但不使用
 def crawl_and_parse_meeting_legacy(url: str, cookies_str: Optional[str] = None) -> Optional[Dict[str, Any]]:

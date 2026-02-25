@@ -1,3 +1,20 @@
+# ============================================================================
+# 文件: models.py
+# 模块: server
+# 职责: SQLAlchemy ORM 模型定义，映射数据库表结构
+#
+# 依赖声明:
+#   - 外部: sqlalchemy, uuid
+#   - 本模块: server.database (Base)
+#
+# 主要模型:
+#   - User: 用户表 (shjl_users)
+#   - Todo: 待办事项表 (shjl_todos)
+#   - Meeting: 会议表 (shjl_meetings)
+#   - ChatMessage: 聊天消息表 (shjl_chat_messages)
+#
+# ============================================================================
+
 from sqlalchemy import Column, String, Integer, Boolean, Text, DateTime, JSON, Enum, ForeignKey
 from sqlalchemy.sql import func
 from .database import Base

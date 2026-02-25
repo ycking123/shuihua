@@ -1,3 +1,18 @@
+# ============================================================================
+# 文件: server_receive.py
+# 模块: backend
+# 职责: 后端服务接收处理，WebSocket 连接管理，会议数据处理
+#
+# 依赖声明:
+#   - 外部: os, logging, json, base64, time, fitz (PyMuPDF), typing, datetime, pathlib
+#   - 外部: fastapi, pydantic, dotenv, openai
+#
+# 主要接口:
+#   - WebSocket 服务: 处理实时会议数据推送
+#   - REST API: 处理会议上传、解析、存储
+#
+# ============================================================================
+
 import os
 import logging
 import json
@@ -352,11 +367,31 @@ def save_meeting_data_to_db(crawl_result, system_user_id: Optional[str], meeting
             else:
                 combined_summary = "【会议待办】\n" + "\n".join(todo_lines)
 
+        # 智能标题生成
+        original_title = crawl_result.get("title", "会议纪要")
+        smart_title = original_title
+        
+        # 检测默认标题特征（如"xxx的快速会议"）
+        import re
+        default_patterns = ["的快速会议", "的会议", "快速会议"]
+        is_default_title = any(p in original_title for p in default_patterns) and len(original_title) < 30
+        
+        if is_default_title and combined_summary:
+            # 提取 summary 第一句作为标题
+            sentences = re.split(r'[。！？\n]', combined_summary)
+            for sentence in sentences:
+                sentence = sentence.strip()
+                # 跳过"【会议待办】"这样的标题行
+                if sentence and len(sentence) >= 5 and not sentence.startswith('【'):
+                    smart_title = sentence[:50]
+                    logger.info(f"🧠 智能标题: '{original_title}' -> '{smart_title}'")
+                    break
+
         # 1. Save Meeting Record
         new_meeting = Meeting(
             id=str(uuid.uuid4()),
             organizer_id=user_id,
-            title=clean_text(crawl_result.get("title", "会议纪要")),
+            title=clean_text(smart_title),
             start_time=datetime.now(),
             end_time=datetime.now(),
             location=meeting_url or "腾讯会议",

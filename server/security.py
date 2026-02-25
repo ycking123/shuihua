@@ -1,3 +1,22 @@
+# ============================================================================
+# 文件: security.py
+# 模块: server
+# 职责: 安全认证相关工具，密码加密，JWT 令牌管理
+#
+# 依赖声明:
+#   - 外部: datetime, typing, jose, passlib, os
+#
+# 主要接口:
+#   - verify_password(plain_password, hashed_password): 验证密码
+#   - get_password_hash(password): 生成密码哈希
+#   - create_access_token(data, expires_delta): 创建 JWT 令牌
+#   - verify_token(token): 验证 JWT 令牌
+#
+# 环境变量:
+#   - SECRET_KEY: JWT 签名密钥
+#
+# ============================================================================
+
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import jwt

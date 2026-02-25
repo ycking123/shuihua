@@ -28,6 +28,8 @@ class TodoItemSchema(BaseModel):
     content: Optional[str] = None
     isUserTask: bool = False
     textType: int = 0
+    source_message_id: Optional[str] = None  # 关联的会议ID
+    source_origin: Optional[str] = None  # 来源类型
     
     # 兼容前端字段名到数据库字段名的映射
     class Config:
@@ -53,7 +55,11 @@ def db_to_schema(db_item: Todo) -> TodoItemSchema:
     )
 
 @router.get("/api/todos", response_model=List[TodoItemSchema])
-def get_todos(http_request: Request, db: Session = Depends(get_db)):
+def get_todos(http_request: Request, db: Session = Depends(get_db), sort_by: str = "created_at"):
+    """
+    获取待办列表
+    sort_by: "created_at" (生成时间) | "meeting_time" (会议时间)
+    """
     # Extract user_id from token if available
     user_id = "00000000-0000-0000-0000-000000000000"
     auth_header = http_request.headers.get("Authorization")
@@ -65,20 +71,32 @@ def get_todos(http_request: Request, db: Session = Depends(get_db)):
                 user_id = payload["user_id"]
         except Exception:
             pass
+    
+    from ..models import Meeting
             
-    # Query todos for this user (or default user if no token)
-    # Also include tasks assigned to "Sender" if they belong to this user session context (simplified for now)
-    todos = db.query(Todo).filter(
+    # Query todos for this user
+    query = db.query(Todo).filter(
         Todo.is_deleted == False,
         Todo.user_id == user_id
-    ).order_by(desc(Todo.created_at)).all()
+    )
     
+    # 排序逻辑
+    if sort_by == "meeting_time":
+        # 按会议时间排序：关联 Meeting 表的 start_time
+        query = query.outerjoin(
+            Meeting, Todo.source_message_id == Meeting.id
+        ).order_by(desc(Meeting.start_time))
+    else:
+        # 默认按生成时间排序
+        query = query.order_by(desc(Todo.created_at))
+    
+    todos = query.all()
     return [db_to_schema(t) for t in todos]
 
 @router.post("/api/todos", response_model=TodoItemSchema)
 def add_todo(todo: TodoItemSchema, http_request: Request, db: Session = Depends(get_db)):
     # Extract user_id from token
-    user_id = "00000000-0000-0000-0000-000000000000"
+    user_id = None
     auth_header = http_request.headers.get("Authorization")
     if auth_header and auth_header.startswith("Bearer "):
         token = auth_header.split(" ")[1]
@@ -88,23 +106,22 @@ def add_todo(todo: TodoItemSchema, http_request: Request, db: Session = Depends(
                 user_id = payload["user_id"]
         except Exception:
             pass
-            
-    # Check if this user_id exists in the database to prevent IntegrityError
-    from ..models import User
-    existing_user = db.query(User).filter(User.id == user_id).first()
     
-    if not existing_user:
-        # If the user doesn't exist (e.g. default placeholder or invalid token), try to find ANY user
-        # DEPRECATED: This caused isolation issues where tasks were assigned to random users (e.g. admin)
-        # We now strictly require a valid user_id or a valid default user.
-        # fallback_user = db.query(User).first()
-        # if fallback_user:
-        #     user_id = fallback_user.id
-        # else:
-        #     # If NO users exist at all, we can't insert due to foreign key constraint
-        #     # We must create a default user or fail
-        #     raise HTTPException(status_code=500, detail="No users found in database to attach todo item")
-        raise HTTPException(status_code=401, detail="Authentication required or invalid user")
+    # 如果没有有效的 user_id，使用默认用户或第一个用户
+    from ..models import User
+    if not user_id:
+        # 尝试使用默认用户
+        default_user = db.query(User).filter(User.id == "00000000-0000-0000-0000-000000000000").first()
+        if default_user:
+            user_id = default_user.id
+        else:
+            # 使用第一个可用用户
+            first_user = db.query(User).first()
+            if first_user:
+                user_id = first_user.id
+    
+    if not user_id:
+        raise HTTPException(status_code=500, detail="No users found in database")
 
     new_todo = Todo(
         id=str(uuid.uuid4()),
@@ -119,6 +136,8 @@ def add_todo(todo: TodoItemSchema, http_request: Request, db: Session = Depends(
         ai_action=todo.aiAction,
         is_user_task=todo.isUserTask,
         text_type=todo.textType,
+        source_message_id=todo.source_message_id,  # 关联会议ID
+        source_origin=todo.source_origin,  # 来源类型
         created_at=datetime.now(),
         updated_at=datetime.now()
     )
@@ -234,4 +253,62 @@ def create_todo_internal(
     return db_to_schema(new_todo)
 
 
+class TodoUpdateSchema(BaseModel):
+    """待办更新请求"""
+    title: Optional[str] = None
+    content: Optional[str] = None
+    priority: Optional[str] = None
+    status: Optional[str] = None
 
+@router.put("/api/todos/{todo_id}", response_model=TodoItemSchema)
+def update_todo(todo_id: str, todo_update: TodoUpdateSchema, http_request: Request, db: Session = Depends(get_db)):
+    """
+    更新待办事项
+    """
+    # 查询待办（不验证 user_id，因为会议待办可能是系统创建的）
+    todo = db.query(Todo).filter(
+        Todo.id == todo_id,
+        Todo.is_deleted == False
+    ).first()
+    
+    if not todo:
+        raise HTTPException(status_code=404, detail="Todo not found")
+    
+    # 更新字段
+    if todo_update.title is not None:
+        todo.title = todo_update.title
+    if todo_update.content is not None:
+        todo.content = todo_update.content
+    if todo_update.priority is not None:
+        todo.priority = todo_update.priority
+    if todo_update.status is not None:
+        todo.status = todo_update.status
+        if todo_update.status == "completed":
+            todo.completed_at = datetime.now()
+    
+    todo.updated_at = datetime.now()
+    db.commit()
+    db.refresh(todo)
+    
+    return db_to_schema(todo)
+
+@router.delete("/api/todos/{todo_id}")
+def delete_todo(todo_id: str, http_request: Request, db: Session = Depends(get_db)):
+    """
+    删除待办事项（软删除）
+    """
+    # 查询待办（不验证 user_id，因为会议待办可能是系统创建的）
+    todo = db.query(Todo).filter(
+        Todo.id == todo_id,
+        Todo.is_deleted == False
+    ).first()
+    
+    if not todo:
+        raise HTTPException(status_code=404, detail="Todo not found")
+    
+    # 软删除
+    todo.is_deleted = True
+    todo.updated_at = datetime.now()
+    db.commit()
+    
+    return {"message": "Todo deleted successfully", "id": todo_id}

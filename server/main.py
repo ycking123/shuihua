@@ -1,3 +1,27 @@
+# ============================================================================
+# 文件: main.py
+# 模块: server
+# 职责: FastAPI 应用主入口，路由注册，CORS 配置，生命周期管理
+#
+# 依赖声明:
+#   - 外部: fastapi, uvicorn, pathlib, dotenv, os, contextlib
+#   - 本模块: server.routers (asr, chat, todos, auth, dashboard, meetings)
+#   - 本模块: server.database (engine, Base, init_db)
+#
+# 主要接口:
+#   - app: FastAPI 应用实例
+#   - GET /api/health: 健康检查接口
+#
+# 注册的路由:
+#   - /api/asr: 语音识别
+#   - /api/chat: 聊天对话
+#   - /api/todos: 待办事项管理
+#   - /api/auth: 用户认证
+#   - /api/dashboard: 仪表盘数据
+#   - /api/meetings: 会议管理
+#
+# ============================================================================
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -27,7 +51,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Error creating database tables: {e}")
         # We don't raise here to allow server to start, but DB ops will likely fail
-    
+
     print("Database connection initialized")
     yield
     # Shutdown
