@@ -1,0 +1,111 @@
+# Claude Code 最佳实践参考
+
+官方推荐的 Claude Code 高级配置和最佳实践资源。
+
+---
+
+## 使用场景
+
+当需要以下操作时参考此技能：
+- 设置 Claude Code 的高级功能
+- 学习生产级的编码规范和流程
+- 配置 AI Agents 工作流
+- 实施测试驱动开发（TDD）
+- 进行代码审查和安全审查
+
+## 推荐资源
+
+### 1. everything-claude-code
+
+**仓库地址**: https://github.com/affaan-m/everything-claude-code
+
+**特点**:
+- Anthropic 黑客松冠军作品
+- 生产级最佳实践集合
+- 完整的 Claude Code 配置和工作流
+
+**包含内容**:
+
+#### Agents（AI 代理）
+- **planner**: 项目规划和任务分解
+- **architect**: 架构设计和系统规划
+- **code-reviewer**: 代码质量审查
+- **security-reviewer**: 安全性审查
+
+#### Skills（技能）
+- 编码规范和代码风格
+- 前后端开发模式
+- TDD（测试驱动开发）工作流
+- 安全审查流程
+
+#### Commands（命令）
+- `/tdd`: 测试驱动开发流程
+- `/deploy`: 部署流程
+- `/refactor`: 代码重构
+
+---
+
+### 2. Official Skills Repository
+
+**仓库地址**: https://github.com/anthropics/skills
+
+**特点**:
+- 官方维护的技能仓库
+- 可直接安装和使用
+
+**安装方式**:
+```
+/plugin marketplace add anthropics/skills
+```
+
+---
+
+## 应用建议
+
+### 项目配置
+
+参考 `everything-claude-code` 仓库中的配置文件，为当前项目设置：
+
+1. **Agent 工作流配置**
+   - 在 `.claude/settings.local.json` 中配置 agents
+   - 定义不同 agent 的职责和触发条件
+
+2. **技能集合配置**
+   - 根据项目需求选择合适的 skills
+   - 自定义项目特定的技能
+
+3. **命令快捷方式**
+   - 配置常用的开发命令
+   - 建立项目特有的工作流
+
+### 开发流程
+
+采用推荐的工作流程：
+
+1. **规划阶段**
+   - 使用 planner agent 进行任务分解
+   - 制定清晰的开发计划
+
+2. **开发阶段**
+   - 遵循编码规范
+   - 使用 TDD 方法（/tdd 命令）
+
+3. **审查阶段**
+   - 运行 code-reviewer 进行代码审查
+   - 运行 security-reviewer 进行安全检查
+
+4. **部署阶段**
+   - 使用 /deploy 命令进行部署准备
+   - 验证部署流程
+
+---
+
+**相关资源**:
+- 开发文档: `开发文档.md`
+- 项目配置: `.claude/settings.local.json`
+- 技能目录: `.claude/skills/`
+
+**核心原则**:
+1. 参考 Anthropic 黑客松冠军作品的最佳实践
+2. 结合项目实际需求进行定制
+3. 持续优化开发工作流
