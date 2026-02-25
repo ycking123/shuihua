@@ -42,6 +42,7 @@ interface TaskItem {
   content?: string;
   isUserTask?: boolean;
   source_message_id?: string;
+  meeting_time?: string;  // 会议开始时间
 }
 
 // 会议关联的待办事项
@@ -520,7 +521,10 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
                   <div className="flex items-center gap-2 mb-1.5">
                     <PriorityTag priority={item.priority} />
                     <span className="text-[9px] font-mono-prec text-slate-400 dark:text-slate-600 uppercase tracking-tighter truncate">
-                      {item.time} • {item.sender}
+                      {sortBy === 'meeting_time' && item.meeting_time 
+                        ? <><Calendar size={10} className="inline mr-1" />{item.meeting_time}</>
+                        : <><Clock size={10} className="inline mr-1" />{item.time}</>
+                      } • {item.sender}
                     </span>
                   </div>
                   <h3 className={`text-[13px] font-bold truncate transition-colors ${

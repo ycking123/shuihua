@@ -30,6 +30,7 @@ class TodoItemSchema(BaseModel):
     textType: int = 0
     source_message_id: Optional[str] = None  # 关联的会议ID
     source_origin: Optional[str] = None  # 来源类型
+    meeting_time: Optional[str] = None  # 会议开始时间（用于前端展示）
     
     # 兼容前端字段名到数据库字段名的映射
     class Config:
@@ -37,21 +38,24 @@ class TodoItemSchema(BaseModel):
         populate_by_name = True
 
 # Helper to convert DB model to Pydantic model with custom time format
-def db_to_schema(db_item: Todo) -> TodoItemSchema:
+def db_to_schema(db_item: Todo, meeting_time: Optional[datetime] = None) -> TodoItemSchema:
     return TodoItemSchema(
         id=db_item.id,
         type=db_item.type,
         priority=db_item.priority,
         title=db_item.title,
-        sender=db_item.sender,
-        time=db_item.created_at.strftime("%H:%M") if db_item.created_at else "",
+        sender=db_item.sender or "未知",  # 处理 None 值
+        time=db_item.created_at.strftime("%Y/%m/%d %H:%M:%S") if db_item.created_at else "",
         completed=db_item.status == "completed",
         status=db_item.status,
         aiSummary=db_item.ai_summary,
         aiAction=db_item.ai_action,
         content=db_item.content,
         isUserTask=db_item.is_user_task,
-        textType=db_item.textType if hasattr(db_item, 'textType') else db_item.text_type # Handle snake_case vs camelCase mismatch if any
+        textType=db_item.textType if hasattr(db_item, 'textType') else db_item.text_type,
+        source_message_id=db_item.source_message_id,
+        source_origin=db_item.source_origin,
+        meeting_time=meeting_time.strftime("%Y/%m/%d %H:%M") if meeting_time else None
     )
 
 @router.get("/api/todos", response_model=List[TodoItemSchema])
@@ -73,25 +77,36 @@ def get_todos(http_request: Request, db: Session = Depends(get_db), sort_by: str
             pass
     
     from ..models import Meeting
+    from sqlalchemy.orm import joinedload
             
-    # Query todos for this user
-    query = db.query(Todo).filter(
+    # Query todos with meeting join to get meeting_time
+    query = db.query(Todo, Meeting.start_time).outerjoin(
+        Meeting, Todo.source_message_id == Meeting.id
+    ).filter(
         Todo.is_deleted == False,
         Todo.user_id == user_id
     )
     
     # 排序逻辑
     if sort_by == "meeting_time":
-        # 按会议时间排序：关联 Meeting 表的 start_time
-        query = query.outerjoin(
-            Meeting, Todo.source_message_id == Meeting.id
-        ).order_by(desc(Meeting.start_time))
+        # 按会议时间排序：有会议的排前面，同按会议时间倒序；无会议的排后面，按生成时间倒序
+        query = query.order_by(
+            Meeting.start_time.is_(None),  # 有会议的排前面
+            desc(Meeting.start_time),       # 会议时间倒序
+            desc(Todo.created_at)           # 无会议的按生成时间
+        )
     else:
         # 默认按生成时间排序
         query = query.order_by(desc(Todo.created_at))
     
-    todos = query.all()
-    return [db_to_schema(t) for t in todos]
+    results = query.all()
+    
+    # 转换为 schema 列表
+    todo_list = []
+    for todo, meeting_start_time in results:
+        todo_list.append(db_to_schema(todo, meeting_start_time))
+    
+    return todo_list
 
 @router.post("/api/todos", response_model=TodoItemSchema)
 def add_todo(todo: TodoItemSchema, http_request: Request, db: Session = Depends(get_db)):
@@ -265,6 +280,8 @@ def update_todo(todo_id: str, todo_update: TodoUpdateSchema, http_request: Reque
     """
     更新待办事项
     """
+    from ..models import Meeting
+    
     # 查询待办（不验证 user_id，因为会议待办可能是系统创建的）
     todo = db.query(Todo).filter(
         Todo.id == todo_id,
@@ -290,7 +307,10 @@ def update_todo(todo_id: str, todo_update: TodoUpdateSchema, http_request: Reque
     db.commit()
     db.refresh(todo)
     
-    return db_to_schema(todo)
+    # 获取关联的会议时间
+    meeting = db.query(Meeting).filter(Meeting.id == todo.source_message_id).first() if todo.source_message_id else None
+    
+    return db_to_schema(todo, meeting.start_time if meeting else None)
 
 @router.delete("/api/todos/{todo_id}")
 def delete_todo(todo_id: str, http_request: Request, db: Session = Depends(get_db)):
