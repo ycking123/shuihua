@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import desc
 from ..database import get_db
 from ..models import Meeting, User, Todo
 from typing import List, Optional
@@ -17,12 +18,13 @@ class MeetingResponse(BaseModel):
     id: str
     title: str
     start_time: datetime
+    created_at: datetime
     end_time: datetime
     location: Optional[str] = None
     summary: Optional[str] = None
     transcript: Optional[str] = None
     organizer_id: Optional[str] = None
-    todos_count: int = 0  # 新增：关联待办数量
+    todos_count: int = 0
     
     class Config:
         from_attributes = True
@@ -79,6 +81,7 @@ def db_meeting_to_response(meeting: Meeting, db: Session) -> MeetingResponse:
         id=meeting.id,
         title=meeting.title,
         start_time=meeting.start_time,
+        created_at=meeting.created_at,
         end_time=meeting.end_time,
         location=meeting.location,
         summary=meeting.summary,
@@ -88,8 +91,18 @@ def db_meeting_to_response(meeting: Meeting, db: Session) -> MeetingResponse:
     )
 
 @router.get("/", response_model=List[MeetingResponse])
-def get_meetings(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    meetings = db.query(Meeting).order_by(Meeting.start_time.desc()).offset(skip).limit(limit).all()
+def get_meetings(
+    skip: int = 0, 
+    limit: int = 100, 
+    sort_by: str = Query("start_time", description="排序字段: start_time(会议时间) | created_at(发送时间)"),
+    db: Session = Depends(get_db)
+):
+    if sort_by == "created_at":
+        query = db.query(Meeting).order_by(desc(Meeting.created_at))
+    else:
+        query = db.query(Meeting).order_by(desc(Meeting.start_time))
+    
+    meetings = query.offset(skip).limit(limit).all()
     return [db_meeting_to_response(m, db) for m in meetings]
 
 @router.get("/{meeting_id}", response_model=MeetingResponse)

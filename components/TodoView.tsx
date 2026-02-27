@@ -26,7 +26,7 @@ import { ViewType } from '../types';
 type TodoCategory = 'all' | 'email' | 'meeting' | 'approval' | 'chat_record' | 'meeting_minutes';
 type PriorityType = 'urgent' | 'high' | 'normal';
 
-type SortByType = 'created_at' | 'meeting_time';
+type SortByType = 'created_at' | 'meeting_start_time';
 
 interface TaskItem {
   id: string | number;
@@ -42,7 +42,8 @@ interface TaskItem {
   content?: string;
   isUserTask?: boolean;
   source_message_id?: string;
-  meeting_time?: string;  // 会议开始时间
+  meeting_start_time?: string;
+  meeting_created_at?: string;
 }
 
 // 会议关联的待办事项
@@ -61,6 +62,7 @@ interface MeetingItem {
   id: string;
   title: string;
   start_time: string;
+  created_at: string;
   location: string;
   summary: string;
   transcript: string;
@@ -240,8 +242,8 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
           setBackendTasks(data);
         }
 
-        // Fetch Meetings
-        const resMeetings = await fetch(`${baseUrl}/meetings`, { headers });
+        // Fetch Meetings with sort parameter
+        const resMeetings = await fetch(`${baseUrl}/meetings?sort_by=${sortBy}`, { headers });
         if (resMeetings.ok) {
           const data = await resMeetings.json();
           setMeetingMinutes(data);
@@ -394,12 +396,12 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
               }`}
             >
               <Clock size={10} className="inline mr-1" />
-              生成时间
+              发送时间
             </button>
             <button
-              onClick={() => setSortBy('meeting_time')}
+              onClick={() => setSortBy('meeting_start_time')}
               className={`px-3 py-1 rounded-full text-[10px] font-medium transition-colors ${
-                sortBy === 'meeting_time' 
+                sortBy === 'meeting_start_time' 
                   ? 'bg-blue-600 text-white' 
                   : 'bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10'
               }`}
@@ -477,7 +479,10 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1.5">
                       <span className="text-[9px] font-mono-prec text-slate-400 dark:text-slate-600 uppercase tracking-tighter truncate">
-                        {new Date(item.start_time).toLocaleString()}
+                        {sortBy === 'meeting_start_time'
+                          ? <><Calendar size={10} className="inline mr-1" />{item.start_time ? new Date(item.start_time).toLocaleString() : ''}</>
+                          : <><Clock size={10} className="inline mr-1" />{item.created_at ? new Date(item.created_at).toLocaleString() : ''}</>
+                        }
                       </span>
                     </div>
                     <h3 className="text-[13px] font-bold truncate text-slate-800 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-blue-400">
@@ -521,9 +526,9 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
                   <div className="flex items-center gap-2 mb-1.5">
                     <PriorityTag priority={item.priority} />
                     <span className="text-[9px] font-mono-prec text-slate-400 dark:text-slate-600 uppercase tracking-tighter truncate">
-                      {sortBy === 'meeting_time' && item.meeting_time 
-                        ? <><Calendar size={10} className="inline mr-1" />{item.meeting_time}</>
-                        : <><Clock size={10} className="inline mr-1" />{item.time}</>
+                      {sortBy === 'meeting_start_time' && item.meeting_start_time 
+                        ? <><Calendar size={10} className="inline mr-1" />{item.meeting_start_time}</>
+                        : <><Clock size={10} className="inline mr-1" />{item.meeting_created_at || item.time}</>
                       } • {item.sender}
                     </span>
                   </div>
