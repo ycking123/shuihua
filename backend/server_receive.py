@@ -328,6 +328,7 @@ def send_wecom_text(user_id: str, content: str, chat_id: str = None) -> bool:
 def save_meeting_data_to_db(crawl_result, system_user_id: Optional[str], meeting_url: str = ""):
     """
     Save crawled meeting data to database directly.
+    使用爬取到的真实开始时间(real_start_time)作为会议时间
     """
     db = SessionLocal()
     try:
@@ -336,6 +337,15 @@ def save_meeting_data_to_db(crawl_result, system_user_id: Optional[str], meeting
         meeting_summary = crawl_result.get("summary", "")
         extracted_todos = crawl_result.get("todos", [])
         personal_todos = crawl_result.get("personal_todos", [])
+        
+        # --- 获取真实开始时间，用于排序 ---
+        real_start_time = crawl_result.get("real_start_time")
+        if real_start_time:
+            logger.info(f"📅 使用会议真实开始时间: {real_start_time}")
+        else:
+            real_start_time = datetime.now()
+            logger.info("⚠️ 未获取到真实开始时间，使用当前时间作为会议时间")
+        
         if isinstance(extracted_todos, str):
             try:
                 parsed = json.loads(extracted_todos)
@@ -387,13 +397,13 @@ def save_meeting_data_to_db(crawl_result, system_user_id: Optional[str], meeting
                     logger.info(f"🧠 智能标题: '{original_title}' -> '{smart_title}'")
                     break
 
-        # 1. Save Meeting Record
+        # 1. Save Meeting Record - 使用真实开始时间
         new_meeting = Meeting(
             id=str(uuid.uuid4()),
             organizer_id=user_id,
             title=clean_text(smart_title),
-            start_time=datetime.now(),
-            end_time=datetime.now(),
+            start_time=real_start_time,  # 使用真实开始时间
+            end_time=real_start_time,    # 同样使用真实开始时间（待扩展）
             location=meeting_url or "腾讯会议",
             summary=clean_text(combined_summary),
             transcript=clean_text(crawl_result.get("transcript", "")),

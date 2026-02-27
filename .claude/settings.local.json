@@ -5,5 +5,24 @@
       "Bash(mkdir:*)",
       "Bash(python:*)"
     ]
+  },
+  "extraKnownMarketplaces": {
+    "everything-claude-code": {
+      "source": {
+        "source": "github",
+        "repo": "affaan-m/everything-claude-code"
+      }
+    },
+    "agent-skill-creator": {
+      "source": {
+        "source": "github",
+        "repo": "FrancyJGLisboa/agent-skill-creator"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "everything-claude-code@everything-claude-code": true,
+    "agent-skill-creator@agent-skill-creator": true,
+    "frontend-design": true
   }
 }

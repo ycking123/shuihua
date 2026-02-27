@@ -1,0 +1,163 @@
+# Security Review
+
+Comprehensive security checklist and review process for code changes.
+
+---
+
+## Review Checklist
+
+Before merging any code changes, verify the following:
+
+### Authentication & Authorization
+- [ ] Passwords are hashed (bcrypt, argon2)
+- [ ] JWT tokens have proper expiration
+- [ ] Session management is secure
+- [ ] Permission checks on all endpoints
+- [ ] No hardcoded credentials in code
+
+### Input Validation
+- [ ] All user inputs are validated
+- [ ] SQL injection prevention (parameterized queries)
+- [ ] XSS prevention (output encoding)
+- [ ] CSRF protection enabled
+- [ ] File upload validation (type, size)
+
+### Data Protection
+- [ ] Sensitive data is encrypted at rest
+- [ ] HTTPS is enforced
+- [ ] Sensitive data not logged
+- [ ] Error messages don't leak information
+- [ ] Proper data sanitization
+
+### API Security
+- [ ] Rate limiting implemented
+- [ ] Input validation on all endpoints
+- [ ] Proper error handling
+- [ ] API keys are not exposed
+- [ ] Authentication on all sensitive routes
+
+### Dependencies
+- [ ] No known CVEs in dependencies
+- [ ] Dependencies are up to date
+- [ ] Only necessary dependencies included
+- [ ] Supply chain is trusted
+
+---
+
+## Security Review Process
+
+### 1. Initial Assessment
+- Understand the feature/change
+- Identify sensitive data flows
+- Map potential attack vectors
+
+### 2. Code Analysis
+- Check for common vulnerabilities
+- Verify input validation
+- Review authentication/authorization
+- Check data handling
+
+### 3. Risk Assessment
+- Rate severity (Critical/High/Medium/Low)
+- Assess exploitability
+- Estimate impact
+
+### 4. Provide Recommendations
+- Specific fix suggestions
+- Security best practices
+- Code examples when helpful
+
+---
+
+## Common Vulnerabilities
+
+### SQL Injection
+```python
+# BAD
+query = f"SELECT * FROM users WHERE name = '{name}'"
+
+# GOOD
+query = "SELECT * FROM users WHERE name = %s"
+cursor.execute(query, (name,))
+```
+
+### XSS (Cross-Site Scripting)
+```typescript
+// BAD
+<div>{userInput}</div>
+
+// GOOD
+<div>{escape(userInput)}</div>
+```
+
+### Hardcoded Secrets
+```python
+# BAD
+API_KEY = "sk-1234567890abcdef"
+
+# GOOD
+API_KEY = os.environ.get("API_KEY")
+```
+
+### Path Traversal
+```python
+# BAD
+file_path = os.path.join(base_dir, user_path)
+
+# GOOD
+file_path = os.path.normpath(os.path.join(base_dir, user_path))
+if not file_path.startswith(base_dir):
+    raise ValueError("Invalid path")
+```
+
+---
+
+## Using the Security Reviewer Agent
+
+For thorough security reviews, delegate to the security-reviewer agent:
+
+1. Provide the code/files to review
+2. Specify the context (feature, change, etc.)
+3. Request a security assessment
+
+The agent will provide:
+- Vulnerability findings
+- Risk assessment
+- Fix recommendations
+- Best practice suggestions
+
+---
+
+## Security Tools Integration
+
+### Python
+```bash
+# Check for security issues
+pip install bandit
+bandit -r backend/
+
+# Check dependencies
+pip install safety
+safety check
+```
+
+### JavaScript/TypeScript
+```bash
+# Check dependencies
+npm audit
+
+# Fix vulnerabilities
+npm audit fix
+```
+
+---
+
+## Related Resources
+
+- [security.md](rules/common/security.md) - Security rules and guidelines
+- [security-reviewer.md](agents/security-reviewer.md) - Security reviewer agent
+- Official security guidelines for your tech stack
+
+---
+
+**Remember**: Security is an ongoing process, not a one-time checklist. Stay updated on security best practices and vulnerabilities.

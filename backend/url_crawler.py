@@ -24,10 +24,16 @@ import html as html_lib
 import time
 import random
 import string
+import sys
+import os
 from difflib import SequenceMatcher
 from typing import Optional, Dict, Any, List, Tuple
 from urllib.parse import urljoin, urlparse, parse_qs
 from backend.ai_handler import extract_todos_from_text
+
+# 导入 meeting_time 模块
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from meeting_time import get_real_start_time
 
 # Playwright 浏览器爬虫为可选依赖（API 爬虫不需要）
 try:
@@ -177,14 +183,17 @@ def crawl_meeting_transcript_api(share_url, user_cookie: Optional[str] = None):
     return "\n\n".join(transcript_lines)
 
 def get_meeting_params(share_url, user_cookie: Optional[str] = None):
-    """通过分享链接自动获取 sharing_id, meeting_id 和 record_id"""
+    """
+    通过分享链接自动获取 sharing_id, meeting_id, record_id, meeting_title, real_start_time
+    调用 meeting_time.py 获取真实开始时间
+    """
     parsed_url = urlparse(share_url)
     query_params = parse_qs(parsed_url.query)
     sharing_id = query_params.get('id', [None])[0]
-    
+
     if not sharing_id:
         logger.error("无法从 URL 中解析出 ID")
-        return None, None, None
+        return None, None, None, None, None
 
     api_url = "https://meeting.tencent.com/wemeet-tapi/v2/meetlog/public/detail/common-record-info"
     headers = {
@@ -195,10 +204,10 @@ def get_meeting_params(share_url, user_cookie: Optional[str] = None):
     if user_cookie:
         headers["Cookie"] = user_cookie
     payload = {
-        "sharing_id": sharing_id, 
-        "is_single": False, 
-        "lang": "zh", 
-        "forward_cgi_path": "shares", 
+        "sharing_id": sharing_id,
+        "is_single": False,
+        "lang": "zh",
+        "forward_cgi_path": "shares",
         "enter_from": "share"
     }
 
@@ -206,27 +215,37 @@ def get_meeting_params(share_url, user_cookie: Optional[str] = None):
         response = requests.post(api_url, json=payload, headers=headers, timeout=10)
         res_data = response.json()
         data = res_data.get("data", {})
-        meeting_id = data.get("meeting_info", {}).get("meeting_id")
-        meeting_title = data.get("meeting_info", {}).get("subject", "会议纪要")
+
+        meeting_info = data.get("meeting_info", {})
+        meeting_id = meeting_info.get("meeting_id")
+        meeting_title = meeting_info.get("subject", "会议纪要")
         if meeting_title:
             meeting_title = _maybe_decode_base64_text(meeting_title)
+
+        # --- 调用 meeting_time.py 获取真实开始时间 ---
+        real_start_time = get_real_start_time(share_url, user_cookie)
+        if real_start_time:
+            logger.info(f"📅 获取会议真实开始时间: {real_start_time.strftime('%Y/%m/%d %H:%M:%S')}")
+        else:
+            logger.warning("⚠️ 未能获取真实开始时间")
+
         recordings = data.get("recordings", [])
         record_id = recordings[0].get("id") if recordings else None
-        return sharing_id, meeting_id, record_id, meeting_title
+        return sharing_id, meeting_id, record_id, meeting_title, real_start_time
     except Exception as e:
         logger.error(f"获取会议参数失败: {e}")
-        return None, None, None, None
+        return None, None, None, None, None
 
 def crawl_meeting_summary_api(share_url, user_cookie: Optional[str] = None):
     """
     使用 API 爬取会议 AI 摘要和待办 (基于 summary.py)
-    返回: { title, summary, transcript, todos, personal_todos }
+    返回: { title, summary, transcript, todos, personal_todos, real_start_time }
     """
     result = get_meeting_params(share_url, user_cookie)
     if not result or not all(result[:3]):
         return None
     
-    share_id, meeting_id, record_id, meeting_title = result
+    share_id, meeting_id, record_id, meeting_title, real_start_time = result
 
     nonce = get_random_str(9)
     timestamp = str(int(time.time() * 1000))
@@ -320,7 +339,8 @@ def crawl_meeting_summary_api(share_url, user_cookie: Optional[str] = None):
             "summary": summary_text,
             "transcript": "",  # 摘要 API 不返回完整转写
             "todos": todos,
-            "personal_todos": todos  # 兼容旧结构
+            "personal_todos": todos,  # 兼容旧结构
+            "real_start_time": real_start_time  # 会议真实开始时间
         }
         
     except Exception as e:
@@ -329,11 +349,11 @@ def crawl_meeting_summary_api(share_url, user_cookie: Optional[str] = None):
 
 def crawl_meeting_api(share_url, user_cookie: Optional[str] = None):
     """
-    新的 API 爬虫主入口 - 同时获取摘要和转写
+    新的 API 爬虫主入口 - 同时获取摘要、转写和真实开始时间
     """
     logger.info(f"🚀 使用 API 爬虫模式爬取: {share_url}")
     
-    # 1. 先获取摘要和待办
+    # 1. 先获取摘要和待办（包含 real_start_time）
     summary_result = crawl_meeting_summary_api(share_url, user_cookie)
     
     # 2. 再获取完整转写
@@ -353,14 +373,17 @@ def crawl_meeting_api(share_url, user_cookie: Optional[str] = None):
             summary_result["personal_todos"] = build_personal_todos(transcript, summary_result.get("todos", []))
         return summary_result
     elif transcript:
-        # 只有转写，没有摘要
+        # 只有转写，没有摘要，仍需获取真实开始时间
         ai_result = extract_todos_from_text(transcript)
+        # 单独调用获取真实开始时间
+        _, _, _, _, real_start_time = get_meeting_params(share_url, user_cookie)
         return {
             "title": "会议纪要",
             "summary": ai_result.get("summary", "") if ai_result else "",
             "transcript": transcript,
             "todos": ai_result.get("task_list", []) if ai_result else [],
-            "personal_todos": build_personal_todos(transcript, ai_result.get("task_list", []) if ai_result else [])
+            "personal_todos": build_personal_todos(transcript, ai_result.get("task_list", []) if ai_result else []),
+            "real_start_time": real_start_time
         }
     
     return None
