@@ -47,6 +47,34 @@ class SmartTitleRequest(BaseModel):
     """智能标题更新请求"""
     pass  # 不需要参数，服务端自动判断
 
+def _clean_title_prefix(title: str) -> str:
+    """
+    清理标题中的无效前缀和后缀
+    """
+    prefix_patterns = [
+        "这是一场关于",
+        "这是一场",
+        "本次会议是关于",
+        "本次会议",
+        "会议内容：",
+        "【AI 智能总览】",
+        "【章节内容详情】",
+        "【发言人观点整合】",
+    ]
+    
+    for prefix in prefix_patterns:
+        if title.startswith(prefix):
+            title = title[len(prefix):].strip()
+            break
+    
+    suffix_patterns = ["的讨论会", "的会议", "讨论会", "会议"]
+    for suffix in suffix_patterns:
+        if title.endswith(suffix) and len(title) > len(suffix) + 2:
+            title = title[:-len(suffix)]
+            break
+    
+    return title.strip()
+
 def generate_smart_title(title: str, summary: str) -> str:
     """
     智能标题生成逻辑
@@ -55,20 +83,19 @@ def generate_smart_title(title: str, summary: str) -> str:
     """
     default_patterns = ["的快速会议", "的会议", "快速会议"]
     
-    # 检测默认标题特征
     for pattern in default_patterns:
         if pattern in title and len(title) < 30:
-            # 提取 summary 第一句作为标题
             if summary:
-                # 提取第一句（以句号、问号、感叹号结尾）
                 sentences = re.split(r'[。！？\n]', summary)
                 for sentence in sentences:
                     sentence = sentence.strip()
-                    if sentence and len(sentence) >= 5:  # 至少5个字符
-                        return sentence[:50]  # 限制50字符
+                    if sentence and len(sentence) >= 5:
+                        sentence = _clean_title_prefix(sentence)
+                        if sentence and len(sentence) >= 5:
+                            return sentence[:50]
             return title
     
-    return title  # 用户自定义标题保留
+    return title
 
 def db_meeting_to_response(meeting: Meeting, db: Session) -> MeetingResponse:
     """转换数据库模型为响应模型，包含待办数量"""

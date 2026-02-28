@@ -381,21 +381,40 @@ def save_meeting_data_to_db(crawl_result, system_user_id: Optional[str], meeting
         original_title = crawl_result.get("title", "会议纪要")
         smart_title = original_title
         
-        # 检测默认标题特征（如"xxx的快速会议"）
+        def _clean_title_prefix_local(title: str) -> str:
+            """清理标题中的无效前缀和后缀"""
+            prefix_patterns = [
+                "这是一场关于",
+                "这是一场",
+                "本次会议是关于",
+                "本次会议",
+                "会议内容：",
+            ]
+            for prefix in prefix_patterns:
+                if title.startswith(prefix):
+                    title = title[len(prefix):].strip()
+                    break
+            suffix_patterns = ["的讨论会", "的会议", "讨论会", "会议"]
+            for suffix in suffix_patterns:
+                if title.endswith(suffix) and len(title) > len(suffix) + 2:
+                    title = title[:-len(suffix)]
+                    break
+            return title.strip()
+        
         import re
         default_patterns = ["的快速会议", "的会议", "快速会议"]
         is_default_title = any(p in original_title for p in default_patterns) and len(original_title) < 30
         
         if is_default_title and combined_summary:
-            # 提取 summary 第一句作为标题
             sentences = re.split(r'[。！？\n]', combined_summary)
             for sentence in sentences:
                 sentence = sentence.strip()
-                # 跳过"【会议待办】"这样的标题行
                 if sentence and len(sentence) >= 5 and not sentence.startswith('【'):
-                    smart_title = sentence[:50]
-                    logger.info(f"🧠 智能标题: '{original_title}' -> '{smart_title}'")
-                    break
+                    sentence = _clean_title_prefix_local(sentence)
+                    if sentence and len(sentence) >= 5:
+                        smart_title = sentence[:50]
+                        logger.info(f"🧠 智能标题: '{original_title}' -> '{smart_title}'")
+                        break
 
         # 1. Save Meeting Record - 使用真实开始时间
         new_meeting = Meeting(
