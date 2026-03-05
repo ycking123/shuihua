@@ -1,0 +1,147 @@
+# TDD Workflow
+
+Test-Driven Development workflow and best practices.
+
+---
+
+## Core Principles
+
+TDD (Test-Driven Development) is a development process where:
+1. You write a test before writing production code
+2. Run the test to confirm it fails (Red)
+3. Write the minimal code to make it pass (Green)
+4. Refactor to improve code while tests stay passing (Refactor)
+
+This cycle is known as **Red-Green-Refactor**.
+
+---
+
+## When to Use TDD
+
+Use this skill when:
+- Implementing new features
+- Fixing bugs (write test that reproduces bug first)
+- Refactoring existing code
+- Adding complex logic
+- Working with critical business rules
+
+---
+
+## TDD Workflow Steps
+
+### Step 1: Understand Requirements
+- Clarify what behavior is needed
+- Identify edge cases
+- Define acceptance criteria
+
+### Step 2: Write a Failing Test
+- Write a test that describes the desired behavior
+- Run it to confirm it fails (Red)
+- Ensure test failure message is clear
+
+### Step 3: Make Test Pass
+- Write minimal code to pass the test
+- Don't worry about perfection yet
+- Run tests to confirm they pass (Green)
+
+### Step 4: Refactor
+- Improve code structure
+- Remove duplication
+- Enhance readability
+- Keep tests passing (Refactor)
+
+### Step 5: Repeat
+- Move to next small piece of functionality
+- Continue Red-Green-Refactor cycle
+
+---
+
+## Test Structure
+
+Use the Given-When-Then pattern for clear test organization:
+
+```python
+# Given: Set up the test state
+user = User(name="Alice", email="alice@example.com")
+
+# When: Perform the action
+result = user.validate_email()
+
+# Then: Verify the outcome
+assert result is True
+```
+
+---
+
+## Best Practices
+
+### Keep Tests Small
+- Each test should verify one behavior
+- Avoid testing multiple things in one test
+- Use descriptive test names
+
+### Test Edge Cases
+- Test boundary conditions (empty, null, limits)
+- Test error conditions
+- Test normal cases
+- Test exceptional cases
+
+### Keep Tests Independent
+- Tests should not depend on each other
+- Each test should set up its own data
+- Avoid shared state between tests
+
+### Use Meaningful Assertions
+- Assert specific values, not just truthiness
+- Use appropriate assertion methods
+- Include helpful error messages
+
+### Test Behavior, Not Implementation
+- Test what the code does, not how it does it
+- Avoid testing private methods directly
+- Test public interfaces
+
+---
+
+## Common Patterns
+
+### Arrange-Act-Assert (AAA)
+```javascript
+// Arrange - Setup
+const calculator = new Calculator();
+const a = 5;
+const b = 3;
+
+// Act - Execute
+const result = calculator.add(a, b);
+
+// Assert - Verify
+expect(result).toBe(8);
+```
+
+### Test Doubles
+- **Mock**: Verify interactions
+- **Stub**: Provide predefined responses
+- **Fake**: Simplified implementation
+- **Spy**: Record calls
+
+---
+
+## Running Tests
+
+For this project:
+- Python tests: `pytest backend/`
+- TypeScript tests: Check package.json for test scripts
+
+---
+
+## Integration with Project Rules
+
+This skill works with:
+- [testing.md](rules/common/testing.md) - General testing guidelines
+- [python-best-practices.md](rules/python/python-best-practices.md) - Python-specific testing
+- [react-patterns.md](rules/typescript/react-patterns.md) - React testing
+
+---
+
+**Remember**: The goal of TDD is not just test coverage, but better design through small, verifiable steps.

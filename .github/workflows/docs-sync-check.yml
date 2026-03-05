@@ -1,0 +1,32 @@
+name: Documentation Sync Check
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  docs-sync-check:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+
+    - name: Run documentation sync check
+      run: |
+        python scripts/check_docs_sync.py
+      continue-on-error: true  # 不阻止合并，但会显示警告
+
+    - name: Comment results (PR only)
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          // 这里可以添加更复杂的逻辑来评论检查结果

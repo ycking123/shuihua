@@ -1,0 +1,8 @@
+{
+  "name": "水华精灵 (Water Essence Sprite)",
+  "description": "高端未来感行政驾驶舱，具备AI驱动的战略洞察、系统架构监控和实时运营控制。采用“水华精灵”美学设计，具有纯黑背景、玻璃质感和数据驱动的光泽。",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+python-dotenv
+pydantic
+openai
+websockets
+zhipuai
+tavily-python
+google-generativeai
+sqlalchemy
+pymysql
+mysql-connector-python
+python-jose
+passlib
+python-multipart
+
+
