@@ -169,6 +169,29 @@ def parse_ai_result_to_todos(json_output_str, sender_id=None):
         print("❌ JSON 解析失败")
         return []
 
+def _extract_json_dict(raw_content):
+    """从模型回复中提取 JSON 对象"""
+    if not raw_content:
+        return None
+
+    content = raw_content.strip()
+    if content.startswith("```json"):
+        content = content[7:]
+    elif content.startswith("```"):
+        content = content[3:]
+    if content.endswith("```"):
+        content = content[:-3]
+
+    match = re.search(r'\{.*\}', content, re.DOTALL)
+    if not match:
+        return None
+
+    try:
+        return json.loads(match.group())
+    except json.JSONDecodeError:
+        return None
+
+
 def analyze_intent(text_content):
     """
     分析用户文本意图：闲聊 (chat) / 普通待办 (todo) / 创建会议 (meeting) / 创建群聊 (group_chat)
@@ -206,71 +229,78 @@ def analyze_intent(text_content):
         print(f"❌ 意图识别失败: {e}")
         return "chat"
 
-def extract_group_chat_info(text_content):
+def extract_group_chat_info(text_content, history_summary=None, existing_params=None):
     """
     提取创建群聊的关键信息
     """
     system_prompt = """
-    你是一个群聊创建助手。请从文本中提取创建群聊所需的信息。
+    你是一个企业微信群聊参数补全助手。
+    请结合当前用户消息、最近3条用户输入摘要、以及已有参数，输出当前已经可以确定的群聊参数。
 
-    需要提取：
-    1. chat_name: 群聊名称（默认为 "新群聊"）
-    2. user_ids: 成员UserID列表（从@用户名或"成员:"后提取）
+    规则：
+    1. 只提取明确出现或可由上下文直接确认的信息，不要猜测，不要补默认值。
+    2. 如果已有参数中已有值，且当前消息没有推翻它，就保留该值。
+    3. chat_name 表示群聊名称；user_ids 表示群成员列表。
+    4. 如果某个字段仍无法确认，请返回 null 或空数组，不要编造。
+    5. 只返回 JSON，不要输出解释。
 
-    请直接返回 JSON:
+    返回格式：
     {
         "chat_name": "项目讨论群",
-        "user_ids": ["user1", "user2", "user3"]
+        "user_ids": ["user1", "user2"]
     }
-
-    注意：
-    - 群名称通常是"创建群聊"、"建群"等关键词后的第一个短语
-    - 成员可以从@符号后提取，或从"成员:"、"用户:"后的逗号分隔列表中提取
-    - 如果文本中没有明确指定成员，返回空列表
     """
 
     try:
+        history_text = history_summary or "无"
+        existing_text = json.dumps(existing_params or {}, ensure_ascii=False)
         response = client.chat.completions.create(
             model="glm-4.6",
             messages=[
-                {"role": "user", "content": f"{system_prompt}\n\n用户消息：{text_content}"}
+                {
+                    "role": "user",
+                    "content": (
+                        f"{system_prompt}\n\n"
+                        f"最近3条用户输入摘要：\n{history_text}\n\n"
+                        f"已有参数：\n{existing_text}\n\n"
+                        f"当前用户消息：\n{text_content}"
+                    ),
+                }
             ],
             temperature=0.1,
         )
-        content = response.choices[0].message.content
-
-        # 尝试解析 JSON
-        match = re.search(r'\{.*\}', content, re.DOTALL)
-        if match:
-            json_str = match.group()
-            result = json.loads(json_str)
-            # 确保 user_ids 是列表
-            if not isinstance(result.get("user_ids"), list):
-                result["user_ids"] = []
-            return result
-        return {"chat_name": "新群聊", "user_ids": []}
+        result = _extract_json_dict(response.choices[0].message.content) or {}
+        if not isinstance(result.get("user_ids"), list):
+            result["user_ids"] = []
+        return {
+            key: value
+            for key, value in result.items()
+            if value is not None and value != "" and value != []
+        }
     except Exception as e:
         print(f"❌ 群聊信息提取失败: {e}")
-        return {"chat_name": "新群聊", "user_ids": []}
+        return {}
 
 
-def extract_meeting_info(text_content):
+def extract_meeting_info(text_content, history_summary=None, existing_params=None):
     """
     提取会议关键信息
     """
     current_time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
     system_prompt = f"""
-    你是一个会议助理。请从文本中提取会议信息。
+    你是一个会议参数补全助手。请结合当前用户消息、最近3条用户输入摘要、以及已有参数，输出当前已经可以确认的会议参数。
     当前时间: {current_time_str}
 
-    需要提取：
-    1. topic: 会议主题（默认为 "临时讨论"）
-    2. start_time: 开始时间 (格式 YYYY-MM-DD HH:MM)。若未指定，默认为当前时间后30分钟。
-    3. duration: 持续时长（秒）。若未指定，默认为 3600 (1小时)。
-    4. attendees: 参会人列表（名字）。
+    规则：
+    1. topic 表示会议主题；start_time 表示会议开始时间；duration 表示会议时长（秒）；attendees 表示参会人列表。
+    2. 只提取明确出现或可由上下文直接确认的信息，不要猜测，不要补默认值。
+    3. 如果已有参数中已有值，且当前消息没有推翻它，就保留该值。
+    4. 如果字段无法确认，请返回 null 或空数组。
+    5. 时间统一输出为 YYYY-MM-DD HH:MM。
+    6. 只返回 JSON，不要输出解释。
 
-    请直接返回 JSON:
+    返回格式：
     {{
         "topic": "主题",
         "start_time": "2024-01-01 10:00",
@@ -280,24 +310,34 @@ def extract_meeting_info(text_content):
     """
     
     try:
+        history_text = history_summary or "无"
+        existing_text = json.dumps(existing_params or {}, ensure_ascii=False)
         response = client.chat.completions.create(
             model="glm-4.6",
             messages=[
-                {"role": "user", "content": f"{system_prompt}\n\n用户消息：{text_content}"}
+                {
+                    "role": "user",
+                    "content": (
+                        f"{system_prompt}\n\n"
+                        f"最近3条用户输入摘要：\n{history_text}\n\n"
+                        f"已有参数：\n{existing_text}\n\n"
+                        f"当前用户消息：\n{text_content}"
+                    ),
+                }
             ],
             temperature=0.1,
         )
-        content = response.choices[0].message.content
-
-        # 尝试解析 JSON
-        match = re.search(r'\{.*\}', content, re.DOTALL)
-        if match:
-            json_str = match.group()
-            return json.loads(json_str)
-        return None
+        result = _extract_json_dict(response.choices[0].message.content) or {}
+        if not isinstance(result.get("attendees"), list):
+            result["attendees"] = []
+        return {
+            key: value
+            for key, value in result.items()
+            if value is not None and value != "" and value != []
+        }
     except Exception as e:
         print(f"❌ 会议信息提取失败: {e}")
-        return None
+        return {}
 
 def extract_todos_from_text(text_content):
     """

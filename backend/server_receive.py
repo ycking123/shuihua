@@ -902,6 +902,28 @@ def create_wecom_meeting(meeting_info, creator_id):
                  
         return False
 
+def _extract_session_params(text_content: str, session, use_history: bool = False) -> dict:
+    """按会话类型提取参数"""
+    history_summary = None
+    existing_params = session.collected_params or {}
+    if use_history:
+        history_summary = wecom_session_manager.generate_param_collection_context(session.user_id, count=3)
+
+    if session.intent == "meeting":
+        return extract_meeting_info(
+            text_content,
+            history_summary=history_summary,
+            existing_params=existing_params,
+        ) or {}
+    if session.intent == "group_chat":
+        return extract_group_chat_info(
+            text_content,
+            history_summary=history_summary,
+            existing_params=existing_params,
+        ) or {}
+    return {}
+
+
 def process_text_sync(text_content: str, user_id: str = None, chat_id: str = None):
     """
     Synchronous function to process text message with multi-turn dialogue support
@@ -943,22 +965,19 @@ def process_text_sync(text_content: str, user_id: str = None, chat_id: str = Non
         
         # 3. 创建新会话并提取参数
         session = wecom_session_manager.create_session(user_id, intent, chat_id)
-        
-        # 根据意图提取参数
-        if intent == "meeting":
-            extracted_params = extract_meeting_info(text_content) or {}
-        elif intent == "group_chat":
-            extracted_params = extract_group_chat_info(text_content) or {}
-        elif intent == "todo":
+
+        if intent == "todo":
             # 待办直接处理，不需要多轮
             _handle_todo_intent(text_content, user_id, chat_id, system_user_id)
             wecom_session_manager.clear_session(user_id)
             return
-        else:
-            extracted_params = {}
-        
-        # 记录用户消息到历史
-        session.add_message("user", text_content, extracted_params)
+
+        # 先记录当前消息，确保后续最近3条用户消息包含本轮输入
+        session.add_message("user", text_content, {})
+
+        # 首轮仅基于当前消息抽取，不直接带历史汇总
+        extracted_params = _extract_session_params(text_content, session, use_history=False)
+        session.update_last_message_params(extracted_params)
         
         # 合并参数
         wecom_session_manager.merge_params(user_id, extracted_params)
@@ -1004,13 +1023,9 @@ def _handle_ongoing_session(text_content: str, user_id: str, chat_id: str, sessi
         _execute_session_function(user_id, chat_id, session, system_user_id)
         return
     
-    # 提取新参数
-    if session.intent == "meeting":
-        new_params = extract_meeting_info(text_content) or {}
-    elif session.intent == "group_chat":
-        new_params = extract_group_chat_info(text_content) or {}
-    else:
-        new_params = {}
+    # 基于最近3条用户消息摘要和已有参数进行联合抽取
+    new_params = _extract_session_params(text_content, session, use_history=True)
+    session.update_last_message_params(new_params)
     
     # 合并参数
     wecom_session_manager.merge_params(user_id, new_params)
