@@ -21,6 +21,7 @@ class WecomSessionState:
     created_at: float = field(default_factory=time.time)             # 创建时间戳
     updated_at: float = field(default_factory=time.time)             # 更新时间戳
     chat_id: Optional[str] = None              # 群聊ID（如果在群聊中）
+    message_history: List[Dict[str, Any]] = field(default_factory=list)  # 历史消息记录
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
@@ -33,11 +34,28 @@ class WecomSessionState:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "chat_id": self.chat_id,
+            "message_history": self.message_history,
         }
     
     def is_expired(self, timeout: int = 300) -> bool:
         """检查会话是否过期（默认5分钟）"""
         return time.time() - self.updated_at > timeout
+    
+    def add_message(self, role: str, content: str, extracted_params: Dict[str, Any] = None):
+        """添加消息到历史记录"""
+        self.message_history.append({
+            "role": role,
+            "content": content,
+            "timestamp": time.time(),
+            "extracted_params": extracted_params or {}
+        })
+        # 只保留最近5条消息
+        if len(self.message_history) > 5:
+            self.message_history = self.message_history[-5:]
+    
+    def get_recent_messages(self, count: int = 3) -> List[Dict[str, Any]]:
+        """获取最近N条消息"""
+        return self.message_history[-count:] if self.message_history else []
 
 
 # 各功能的必填参数
@@ -177,7 +195,7 @@ class WecomSessionManager:
             }
     
     def generate_missing_prompt(self, user_id: str) -> str:
-        """生成缺失参数提示"""
+        """生成缺失参数提示，结合历史消息理解上下文"""
         state = self._sessions.get(user_id)
         if not state:
             return "会话已过期，请重新开始。"
@@ -218,13 +236,32 @@ class WecomSessionManager:
                 lines.append(f"👤 负责人：{state.collected_params['assignee']}")
         
         # 构建提示
-        if lines:
-            prompt = "已记录信息：\n" + "\n".join(lines)
-            prompt += f"\n\n还缺少：{', '.join(missing_names)}\n请补充。"
-        else:
-            prompt = f"请提供以下信息：{', '.join(missing_names)}"
+        prompt_parts = []
         
-        return prompt
+        # 添加历史消息上下文（最近3条）
+        recent_msgs = state.get_recent_messages(3)
+        if recent_msgs:
+            prompt_parts.append("💬 对话上下文：")
+            for i, msg in enumerate(recent_msgs, 1):
+                role = "您" if msg.get("role") == "user" else "系统"
+                content = msg.get("content", "")
+                # 截断过长的内容
+                if len(content) > 30:
+                    content = content[:30] + "..."
+                prompt_parts.append(f"  {i}. {role}：{content}")
+            prompt_parts.append("")
+        
+        # 添加已收集的信息
+        if lines:
+            prompt_parts.append("已记录信息：")
+            prompt_parts.extend(lines)
+            prompt_parts.append("")
+        
+        # 添加缺失参数提示
+        prompt_parts.append(f"❓ 还缺少：{', '.join(missing_names)}")
+        prompt_parts.append("请补充上述信息，或提供更多细节。")
+        
+        return "\n".join(prompt_parts)
     
     def generate_confirmation_prompt(self, user_id: str) -> str:
         """生成确认提示"""

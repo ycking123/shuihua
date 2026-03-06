@@ -957,6 +957,9 @@ def process_text_sync(text_content: str, user_id: str = None, chat_id: str = Non
         else:
             extracted_params = {}
         
+        # 记录用户消息到历史
+        session.add_message("user", text_content, extracted_params)
+        
         # 合并参数
         wecom_session_manager.merge_params(user_id, extracted_params)
         
@@ -982,6 +985,9 @@ def process_text_sync(text_content: str, user_id: str = None, chat_id: str = Non
 
 def _handle_ongoing_session(text_content: str, user_id: str, chat_id: str, session, system_user_id: str):
     """处理进行中的多轮对话会话"""
+    
+    # 记录用户消息到历史
+    session.add_message("user", text_content, {})
     
     # 检查用户是否取消
     cancel_keywords = ["取消", "不", "算了", "no", "cancel", "放弃"]
@@ -1542,7 +1548,8 @@ async def wechat_receive(
         if msg.type == 'text':
             # 启动后台任务处理文本
             background_tasks.add_task(process_text_sync, msg.content, msg.source, chat_id)
-            reply = create_reply("已收到您的文本消息，正在分析生成待办...", msg).render()
+            # 多轮对话场景下不立即回复，由后台任务根据情况回复
+            reply = create_reply("", msg).render()
         elif msg.type == 'image':
             # 启动后台任务处理图片
             background_tasks.add_task(process_image_sync, msg.media_id, msg.source, chat_id)
