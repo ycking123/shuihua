@@ -171,20 +171,21 @@ def parse_ai_result_to_todos(json_output_str, sender_id=None):
 
 def analyze_intent(text_content):
     """
-    分析用户文本意图：闲聊 (chat) / 普通待办 (todo) / 创建会议 (meeting)
+    分析用户文本意图：闲聊 (chat) / 普通待办 (todo) / 创建会议 (meeting) / 创建群聊 (group_chat)
     """
     if not text_content:
         return "chat"
 
     system_prompt = """
-    请判断用户的意图，只能返回以下三种之一：
-    - chat：闲聊/普通问答/咨询（如“你好”“怎么配置环境”“介绍下公司”）。
-    - meeting：与会议创建相关（如“安排会议”“预定会议”“讨论一下在几点开会”）。
-    - todo：与任务创建/提醒相关（如“今天下班前提交报表”“安排XX任务给小张”）。
+    请判断用户的意图，只能返回以下四种之一：
+    - chat：闲聊/普通问答/咨询（如"你好""怎么配置环境""介绍下公司"）。
+    - meeting：与会议创建相关（如"安排会议""预定会议""讨论一下在几点开会"）。
+    - todo：与任务创建/提醒相关（如"今天下班前提交报表""安排XX任务给小张"）。
+    - group_chat：与创建群聊/建群/创建群组相关（如"创建群聊""建个群""拉个群讨论""创建项目群"）。
 
-    只返回一个单词：chat / meeting / todo，不要包含其他字符。
+    只返回一个单词：chat / meeting / todo / group_chat，不要包含其他字符。
     """
-    
+
     try:
         response = client.chat.completions.create(
             model="glm-4",
@@ -198,27 +199,77 @@ def analyze_intent(text_content):
             return "meeting"
         if "todo" in intent:
             return "todo"
+        if "group" in intent or "group_chat" in intent:
+            return "group_chat"
         return "chat"
     except Exception as e:
         print(f"❌ 意图识别失败: {e}")
         return "chat"
+
+def extract_group_chat_info(text_content):
+    """
+    提取创建群聊的关键信息
+    """
+    system_prompt = """
+    你是一个群聊创建助手。请从文本中提取创建群聊所需的信息。
+
+    需要提取：
+    1. chat_name: 群聊名称（默认为 "新群聊"）
+    2. user_ids: 成员UserID列表（从@用户名或"成员:"后提取）
+
+    请直接返回 JSON:
+    {
+        "chat_name": "项目讨论群",
+        "user_ids": ["user1", "user2", "user3"]
+    }
+
+    注意：
+    - 群名称通常是"创建群聊"、"建群"等关键词后的第一个短语
+    - 成员可以从@符号后提取，或从"成员:"、"用户:"后的逗号分隔列表中提取
+    - 如果文本中没有明确指定成员，返回空列表
+    """
+
+    try:
+        response = client.chat.completions.create(
+            model="glm-4",
+            messages=[
+                {"role": "user", "content": f"{system_prompt}\n\n用户消息：{text_content}"}
+            ],
+            temperature=0.1,
+        )
+        content = response.choices[0].message.content
+
+        # 尝试解析 JSON
+        match = re.search(r'\{.*\}', content, re.DOTALL)
+        if match:
+            json_str = match.group()
+            result = json.loads(json_str)
+            # 确保 user_ids 是列表
+            if not isinstance(result.get("user_ids"), list):
+                result["user_ids"] = []
+            return result
+        return {"chat_name": "新群聊", "user_ids": []}
+    except Exception as e:
+        print(f"❌ 群聊信息提取失败: {e}")
+        return {"chat_name": "新群聊", "user_ids": []}
+
 
 def extract_meeting_info(text_content):
     """
     提取会议关键信息
     """
     current_time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    
+
     system_prompt = f"""
     你是一个会议助理。请从文本中提取会议信息。
     当前时间: {current_time_str}
-    
+
     需要提取：
     1. topic: 会议主题（默认为 "临时讨论"）
     2. start_time: 开始时间 (格式 YYYY-MM-DD HH:MM)。若未指定，默认为当前时间后30分钟。
     3. duration: 持续时长（秒）。若未指定，默认为 3600 (1小时)。
     4. attendees: 参会人列表（名字）。
-    
+
     请直接返回 JSON:
     {{
         "topic": "主题",

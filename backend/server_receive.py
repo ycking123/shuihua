@@ -48,7 +48,7 @@ from wechatpy.crypto import PrpCrypto
 from wechatpy.utils import byte2int, to_text
 
 # --- Internal Imports ---
-from backend.ai_handler import analyze_chat_screenshot_with_glm4v, parse_ai_result_to_todos, analyze_text_message, analyze_intent, extract_meeting_info
+from backend.ai_handler import analyze_chat_screenshot_with_glm4v, parse_ai_result_to_todos, analyze_text_message, analyze_intent, extract_meeting_info, extract_group_chat_info
 from backend.url_crawler import extract_meeting_url, crawl_and_parse_meeting
 
 try:
@@ -287,7 +287,7 @@ def send_wecom_text(user_id: str, content: str, chat_id: str = None) -> bool:
         if not wechat_client:
             logger.warning("⚠️ WeChatClient 未初始化，无法主动发送消息")
             return False
-            
+
         # 1. 优先尝试发送到群聊
         if chat_id:
             try:
@@ -324,6 +324,130 @@ def send_wecom_text(user_id: str, content: str, chat_id: str = None) -> bool:
     except Exception as e:
         logger.error(f"❌ 企微消息发送失败: {e}")
         return False
+
+
+def create_wecom_group_chat(user_ids: List[str], chat_name: str, owner: str = None) -> dict:
+    """
+    创建企业微信群聊
+    支持企微应用和企微机器人两种模式
+
+    参数:
+        user_ids: 群成员 UserID 列表，至少2人
+        chat_name: 群聊名称
+        owner: 群主 UserID（可选，默认为user_ids第一个）
+
+    返回:
+        dict: {"success": bool, "chatid": str, "message": str}
+    """
+    if not wechat_client:
+        logger.error("❌ WeChatClient 未初始化，无法创建群聊")
+        return {"success": False, "chatid": None, "message": "WeChatClient 未初始化"}
+
+    if not user_ids or len(user_ids) < 2:
+        logger.error("❌ 创建群聊失败：至少需要2个成员")
+        return {"success": False, "chatid": None, "message": "至少需要2个成员才能创建群聊"}
+
+    # 如果没有指定群主，默认使用第一个成员
+    if not owner and user_ids:
+        owner = user_ids[0]
+
+    try:
+        logger.info(f"🚀 正在创建群聊: {chat_name}")
+        logger.info(f"👥 成员列表: {user_ids}, 群主: {owner}")
+
+        # 使用 wechatpy 的 appchat.create 创建群聊
+        # 企业微信 API: POST https://qyapi.weixin.qq.com/cgi-bin/appchat/create
+        res = wechat_client.appchat.create(
+            name=chat_name,
+            owner=owner,
+            user_list=user_ids
+        )
+
+        chatid = res.get("chatid")
+        if chatid:
+            logger.info(f"✅ 群聊创建成功! ChatID: {chatid}")
+            return {
+                "success": True,
+                "chatid": chatid,
+                "message": f"群聊 '{chat_name}' 创建成功"
+            }
+        else:
+            logger.error(f"❌ 群聊创建失败，响应中无 chatid: {res}")
+            return {"success": False, "chatid": None, "message": "创建失败，无返回 chatid"}
+
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"❌ 创建群聊失败: {error_msg}")
+
+        # 处理常见错误
+        if "60011" in error_msg:
+            return {"success": False, "chatid": None, "message": "成员不在应用可见范围，请检查应用可见成员"}
+        elif "40003" in error_msg:
+            return {"success": False, "chatid": None, "message": "无效的 UserID，请检查成员ID是否正确"}
+        elif "40056" in error_msg:
+            return {"success": False, "chatid": None, "message": "群主必须是群成员，请确保群主在user_ids中"}
+        else:
+            return {"success": False, "chatid": None, "message": f"创建失败: {error_msg}"}
+
+
+def send_wecom_group_message(chatid: str, content: str, msg_type: str = "text") -> bool:
+    """
+    向企业微信群聊发送消息
+
+    参数:
+        chatid: 群聊ID
+        content: 消息内容
+        msg_type: 消息类型，支持 text, markdown, image
+
+    返回:
+        bool: 是否发送成功
+    """
+    if not wechat_client:
+        logger.warning("⚠️ WeChatClient 未初始化，无法发送群消息")
+        return False
+
+    if not chatid:
+        logger.error("❌ 群聊ID不能为空")
+        return False
+
+    try:
+        if msg_type == "text":
+            wechat_client.appchat.send_text(chatid, content)
+        elif msg_type == "markdown":
+            wechat_client.appchat.send_markdown(chatid, content)
+        else:
+            logger.warning(f"⚠️ 暂不支持的群消息类型: {msg_type}")
+            return False
+
+        logger.info(f"📨 已向群聊 {chatid} 发送 {msg_type} 消息")
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ 群消息发送失败: {e}")
+        return False
+
+
+def get_wecom_group_info(chatid: str) -> dict:
+    """
+    获取企业微信群聊信息
+
+    参数:
+        chatid: 群聊ID
+
+    返回:
+        dict: 群聊信息，失败返回空字典
+    """
+    if not wechat_client:
+        logger.warning("⚠️ WeChatClient 未初始化")
+        return {}
+
+    try:
+        res = wechat_client.appchat.get(chatid)
+        logger.info(f"✅ 获取群聊信息成功: {chatid}")
+        return res
+    except Exception as e:
+        logger.error(f"❌ 获取群聊信息失败: {e}")
+        return {}
 
 def save_meeting_data_to_db(crawl_result, system_user_id: Optional[str], meeting_url: str = ""):
     """
@@ -879,6 +1003,74 @@ def process_text_sync(text_content: str, user_id: str = None, chat_id: str = Non
                 # Fallback to todo if meeting creation fails? Or just log error
                 pass
                 
+        elif intent == "group_chat":
+            # 处理创建群聊意图
+            logger.info(f"👥 检测到创建群聊意图")
+
+            # 解析群聊信息
+            group_info = extract_group_chat_info(text_content)
+            logger.info(f"📋 提取群聊信息: {group_info}")
+
+            user_ids = group_info.get("user_ids", [])
+            chat_name = group_info.get("chat_name", "新群聊")
+
+            # 确保创建者在成员列表中
+            if user_id and user_id not in user_ids:
+                user_ids.insert(0, user_id)
+
+            if len(user_ids) >= 2:
+                # 创建群聊
+                result = create_wecom_group_chat(
+                    user_ids=user_ids,
+                    chat_name=chat_name,
+                    owner=user_id
+                )
+
+                if result["success"]:
+                    # 发送欢迎消息
+                    welcome_msg = f"""
+🎉 群聊创建成功！
+
+📋 群名称：{chat_name}
+👥 成员：{', '.join(user_ids)}
+📢 创建人：{user_id}
+
+欢迎大家加入，开始协作！
+                    """.strip()
+
+                    send_wecom_group_message(result["chatid"], welcome_msg)
+
+                    # 回复创建者
+                    reply_text = f"✅ 群聊『{chat_name}』创建成功！已将 {len(user_ids)} 位成员加入群聊。"
+                    send_wecom_text(user_id, reply_text, chat_id=chat_id)
+
+                    # 创建待办记录
+                    todo_item = TodoItem(
+                        id=f"group-chat-{int(time.time())}",
+                        type="chat_record",
+                        priority="normal",
+                        title=f"👥 创建群聊: {chat_name}",
+                        sender=user_id,
+                        time=datetime.now().strftime("%H:%M"),
+                        status="completed",
+                        aiSummary=f"成员: {', '.join(user_ids)}",
+                        content=f"群聊名称: {chat_name}\n成员: {', '.join(user_ids)}\n创建时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+                        isUserTask=False
+                    )
+                    save_todos_to_db([todo_item], system_user_id, source_origin="wecom_group_chat")
+                    todos_store.insert(0, todo_item)
+
+                    logger.info(f"✅ 群聊创建成功: {result['chatid']}")
+                else:
+                    # 创建失败
+                    error_msg = f"❌ 群聊创建失败：{result['message']}"
+                    send_wecom_text(user_id, error_msg, chat_id=chat_id)
+                    logger.error(f"❌ 群聊创建失败: {result['message']}")
+            else:
+                # 成员不足
+                reply_text = "创建群聊需要至少2名成员。请使用以下格式：\n创建群聊 群名称 @user1 @user2\n或：\n创建群聊 项目讨论群\n成员: user1,user2,user3"
+                send_wecom_text(user_id, reply_text, chat_id=chat_id)
+
         elif intent == "todo":
             # Process Todo (Original Logic)
             # 1. Call AI Analysis (reuse logic)
@@ -887,7 +1079,7 @@ def process_text_sync(text_content: str, user_id: str = None, chat_id: str = Non
                 json_result = analyze_text_message(text_content)
             except Exception as e:
                 logger.error(f"❌ 文本待办分析失败: {e}")
-            
+
             # 2. Parse and Store Results
             if json_result:
                 new_todos = parse_ai_result_to_todos(json_result, user_id)
@@ -907,12 +1099,12 @@ def process_text_sync(text_content: str, user_id: str = None, chat_id: str = Non
                         except Exception as e:
                             logger.error(f"❌ 数据模型转换失败: {e}")
                     logger.info(f"✅ 文本分析完成，已添加 {saved_count} 条待办")
-                    
+
                     # 构造回复消息
                     reply_text = f"已为您创建 {saved_count} 条待办事项：\n"
                     for i, t in enumerate(new_todos, 1):
                         reply_text += f"{i}. {t.get('title')} (截止: {t.get('aiSummary')})\n"
-                    
+
                     send_wecom_text(user_id, reply_text, chat_id=chat_id)
                 else:
                     logger.warning("⚠️ AI 分析结果解析为空")
@@ -1285,6 +1477,313 @@ async def wechat_receive(
         logger.error(f"❌ 消息处理异常: {e}")
         # Return success to avoid WeChat retrying
         return Response(content="success", media_type="text/plain")
+
+# ============================================================================
+# 企业微信群聊管理API接口
+# ============================================================================
+
+class CreateGroupChatRequest(BaseModel):
+    """创建群聊请求体"""
+    user_ids: List[str]
+    chat_name: str
+    owner: Optional[str] = None
+    welcome_message: Optional[str] = "大家好，群聊已创建成功！"
+
+
+class SendGroupMessageRequest(BaseModel):
+    """发送群消息请求体"""
+    chatid: str
+    content: str
+    msg_type: str = "text"
+
+
+class GroupChatResponse(BaseModel):
+    """群聊操作响应"""
+    success: bool
+    chatid: Optional[str] = None
+    message: str
+
+
+@app.post("/api/wecom/group/create", response_model=GroupChatResponse)
+async def api_create_group_chat(request: CreateGroupChatRequest):
+    """
+    创建企业微信群聊接口
+
+    请求示例:
+    {
+        "user_ids": ["user1", "user2", "user3"],
+        "chat_name": "项目讨论群",
+        "owner": "user1",
+        "welcome_message": "欢迎加入项目讨论群！"
+    }
+    """
+    try:
+        # 创建群聊
+        result = create_wecom_group_chat(
+            user_ids=request.user_ids,
+            chat_name=request.chat_name,
+            owner=request.owner
+        )
+
+        # 如果创建成功且有欢迎消息，发送欢迎消息
+        if result["success"] and request.welcome_message and result["chatid"]:
+            send_wecom_group_message(result["chatid"], request.welcome_message)
+
+        return GroupChatResponse(**result)
+
+    except Exception as e:
+        logger.error(f"❌ API创建群聊异常: {e}")
+        return GroupChatResponse(
+            success=False,
+            message=f"服务器错误: {str(e)}"
+        )
+
+
+@app.post("/api/wecom/group/send", response_model=dict)
+async def api_send_group_message(request: SendGroupMessageRequest):
+    """
+    向企业微信群聊发送消息接口
+
+    请求示例:
+    {
+        "chatid": "wrxxxxxxxxxxxxxxxx",
+        "content": "这是一条测试消息",
+        "msg_type": "text"
+    }
+    """
+    try:
+        success = send_wecom_group_message(
+            chatid=request.chatid,
+            content=request.content,
+            msg_type=request.msg_type
+        )
+
+        return {
+            "success": success,
+            "message": "发送成功" if success else "发送失败"
+        }
+
+    except Exception as e:
+        logger.error(f"❌ API发送群消息异常: {e}")
+        return {"success": False, "message": f"服务器错误: {str(e)}"}
+
+
+@app.get("/api/wecom/group/info")
+async def api_get_group_info(chatid: str):
+    """
+    获取企业微信群聊信息接口
+
+    请求示例: /api/wecom/group/info?chatid=wrxxxxxxxxxxxxxxxx
+    """
+    try:
+        info = get_wecom_group_info(chatid)
+        if info:
+            return {"success": True, "data": info}
+        else:
+            return {"success": False, "message": "获取群聊信息失败"}
+
+    except Exception as e:
+        logger.error(f"❌ API获取群聊信息异常: {e}")
+        return {"success": False, "message": f"服务器错误: {str(e)}"}
+
+
+@app.post("/api/wecom/group/create-and-invite", response_model=GroupChatResponse)
+async def api_create_group_and_invite(
+    user_ids: List[str],
+    chat_name: str,
+    inviter_id: str,
+    owner: Optional[str] = None
+):
+    """
+    创建群聊并发送邀请通知（高级接口）
+
+    - user_ids: 群成员ID列表
+    - chat_name: 群聊名称
+    - inviter_id: 邀请人ID（用于发送邀请消息）
+    - owner: 群主ID（可选）
+    """
+    try:
+        # 创建群聊
+        result = create_wecom_group_chat(
+            user_ids=user_ids,
+            chat_name=chat_name,
+            owner=owner
+        )
+
+        if result["success"] and result["chatid"]:
+            # 构建邀请消息
+            member_names = ", ".join(user_ids)
+            invite_message = f"""
+🎉 新群聊创建成功！
+
+📋 群名称：{chat_name}
+👥 成员：{member_names}
+📢 邀请人：{inviter_id}
+
+欢迎大家加入群聊，开始协作！
+            """.strip()
+
+            # 发送邀请消息到群聊
+            send_wecom_group_message(result["chatid"], invite_message)
+
+            # 同时给每个成员发送私信通知
+            for user_id in user_ids:
+                if user_id != inviter_id:
+                    private_msg = f"您已被邀请加入群聊『{chat_name}』，请查看企业微信群聊列表。"
+                    send_wecom_text(user_id, private_msg)
+
+        return GroupChatResponse(**result)
+
+    except Exception as e:
+        logger.error(f"❌ API创建群聊并邀请异常: {e}")
+        return GroupChatResponse(
+            success=False,
+            message=f"服务器错误: {str(e)}"
+        )
+
+
+# ============================================================================
+# 智能机器人专用接口 - 支持通过机器人触发创建群聊
+# ============================================================================
+
+@app.post("/wecom/smartbot/create-group")
+async def smartbot_create_group(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    msg_signature: str = Query(...),
+    timestamp: str = Query(...),
+    nonce: str = Query(...)
+):
+    """
+    智能机器人回调接口 - 处理创建群聊指令
+
+    支持命令格式：
+    - "创建群聊 群名称 @user1 @user2"
+    - "新建群聊 项目讨论群 成员: user1,user2,user3"
+    """
+    if not crypto:
+        raise HTTPException(status_code=500, detail="WeChatCrypto not initialized")
+
+    try:
+        body = await request.body()
+
+        # 解密消息
+        try:
+            json_body = await request.json()
+            encrypt_data = json_body.get("encrypt") or json_body.get("Encrypt")
+        except json.JSONDecodeError:
+            return Response(content="success", media_type="text/plain")
+
+        if not encrypt_data:
+            return Response(content="success", media_type="text/plain")
+
+        fake_xml = f"<xml><ToUserName><![CDATA[toUser]]></ToUserName><Encrypt><![CDATA[{encrypt_data}]]></Encrypt></xml>"
+        decrypted_xml = crypto.decrypt_message(fake_xml, msg_signature, timestamp, nonce)
+        msg_data = json.loads(decrypted_xml)
+
+        # 解析消息
+        msg_type = msg_data.get("msgtype")
+        user_id = msg_data.get("from", {}).get("userid")
+        chat_id = msg_data.get("chat_info", {}).get("chat_id") or msg_data.get("chatid")
+
+        if msg_type == "text":
+            content = msg_data.get("text", {}).get("content", "")
+
+            # 检查是否是创建群聊命令
+            create_keywords = ["创建群聊", "新建群聊", "建群", "创建群组"]
+            is_create_command = any(keyword in content for keyword in create_keywords)
+
+            if is_create_command:
+                # 解析命令参数
+                # 格式示例: "创建群聊 项目群 @user1 @user2" 或 "创建群聊 项目群 user1,user2"
+                lines = content.strip().split('\n')
+                first_line = lines[0].strip()
+
+                # 提取群名称
+                chat_name = "新群聊"
+                for keyword in create_keywords:
+                    if keyword in first_line:
+                        parts = first_line.split(keyword, 1)
+                        if len(parts) > 1 and parts[1].strip():
+                            chat_name = parts[1].strip().split()[0]
+                            break
+
+                # 提取成员列表
+                user_ids = []
+
+                # 方法1: 从@符号提取
+                import re
+                at_pattern = r'@(\w+)'
+                at_users = re.findall(at_pattern, content)
+                user_ids.extend(at_users)
+
+                # 方法2: 从"成员:"或"用户:"后提取
+                for line in lines:
+                    if line.strip().startswith("成员:") or line.strip().startswith("用户:"):
+                        members_str = line.split(":", 1)[1].strip()
+                        members = [m.strip() for m in members_str.split(",")]
+                        user_ids.extend(members)
+
+                # 去重并确保包含创建者
+                user_ids = list(set(user_ids))
+                if user_id and user_id not in user_ids:
+                    user_ids.insert(0, user_id)
+
+                if len(user_ids) >= 2:
+                    # 异步创建群聊
+                    background_tasks.add_task(
+                        lambda: create_wecom_group_chat_and_notify(
+                            user_ids, chat_name, user_id, chat_id
+                        )
+                    )
+                    reply_text = f"正在为您创建群聊『{chat_name}』，成员: {', '.join(user_ids)}..."
+                else:
+                    reply_text = "创建群聊需要至少2名成员，请使用 @用户名 指定成员，或在消息中写明：\n成员: user1,user2"
+
+                # 发送回复
+                send_wecom_text(user_id, reply_text, chat_id=chat_id)
+
+        return Response(content="success", media_type="text/plain")
+
+    except Exception as e:
+        logger.error(f"❌ SmartBot创建群聊处理异常: {e}")
+        return Response(content="success", media_type="text/plain")
+
+
+def create_wecom_group_chat_and_notify(user_ids: List[str], chat_name: str, creator_id: str, source_chat_id: str = None):
+    """
+    创建群聊并发送通知的辅助函数（用于后台任务）
+    """
+    result = create_wecom_group_chat(
+        user_ids=user_ids,
+        chat_name=chat_name,
+        owner=creator_id
+    )
+
+    if result["success"] and result["chatid"]:
+        # 发送欢迎消息
+        welcome_msg = f"""
+🎉 群聊创建成功！
+
+📋 群名称：{chat_name}
+👥 成员：{', '.join(user_ids)}
+📢 创建人：{creator_id}
+
+欢迎大家加入，开始协作！
+        """.strip()
+
+        send_wecom_group_message(result["chatid"], welcome_msg)
+
+        # 在原聊天中通知创建结果
+        if source_chat_id:
+            notify_msg = f"✅ 群聊『{chat_name}』创建成功！已将相关成员加入群聊。"
+            send_wecom_text(creator_id, notify_msg, chat_id=source_chat_id)
+    else:
+        # 创建失败，通知创建者
+        if source_chat_id:
+            error_msg = f"❌ 群聊创建失败：{result['message']}"
+            send_wecom_text(creator_id, error_msg, chat_id=source_chat_id)
+
 
 if __name__ == "__main__":
     import uvicorn
