@@ -118,7 +118,7 @@ def extract_todos_from_text(text_content, context_messages=None):
 
     try:
         response = client.chat.completions.create(
-            model="glm-4-flash",
+            model="glm-4.6",
             messages=messages_payload,
             temperature=0.1,
         )

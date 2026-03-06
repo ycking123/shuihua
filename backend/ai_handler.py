@@ -104,7 +104,7 @@ def analyze_chat_screenshot_with_glm4v(base64_image_data):
 
     try:
         response = client.chat.completions.create(
-            model="glm-4v",
+            model="glm-4.6",
             messages=[
                 {
                     "role": "user",
@@ -188,7 +188,7 @@ def analyze_intent(text_content):
 
     try:
         response = client.chat.completions.create(
-            model="glm-4",
+            model="glm-4.6",
             messages=[
                 {"role": "user", "content": f"{system_prompt}\n\n用户消息：{text_content}"}
             ],
@@ -231,7 +231,7 @@ def extract_group_chat_info(text_content):
 
     try:
         response = client.chat.completions.create(
-            model="glm-4",
+            model="glm-4.6",
             messages=[
                 {"role": "user", "content": f"{system_prompt}\n\n用户消息：{text_content}"}
             ],
@@ -281,14 +281,14 @@ def extract_meeting_info(text_content):
     
     try:
         response = client.chat.completions.create(
-            model="glm-4",
+            model="glm-4.6",
             messages=[
                 {"role": "user", "content": f"{system_prompt}\n\n用户消息：{text_content}"}
             ],
             temperature=0.1,
         )
         content = response.choices[0].message.content
-        
+
         # 尝试解析 JSON
         match = re.search(r'\{.*\}', content, re.DOTALL)
         if match:
@@ -343,7 +343,7 @@ def extract_todos_from_text(text_content):
 
     try:
         response = client.chat.completions.create(
-            model="glm-4",
+            model="glm-4.6",
             messages=[
                 {"role": "system", "content": f"{system_prompt}\n\n【当前系统时间】：{current_time_str}"},
                 {"role": "user", "content": truncated_content}
@@ -416,7 +416,7 @@ def analyze_text_message(text_content):
 
     try:
         response = client.chat.completions.create(
-            model="glm-4",
+            model="glm-4.6",
             messages=[
                 {
                     "role": "user",

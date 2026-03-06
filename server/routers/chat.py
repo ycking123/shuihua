@@ -19,6 +19,7 @@ from ..security import verify_token
 from .todos import create_todo_internal
 from ..services.llm_factory import LLMFactory
 from ..services.search_service import SearchService
+from ..services.dialogue_processor import dialogue_processor
 
 # --- LlamaIndex Integration ---
 try:
@@ -192,7 +193,64 @@ async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session
     if last_user_message:
         save_message(session_id, "user", last_user_message)
     
-    # 1. Intent Detection & Todo Extraction
+    # 0.5 多轮对话参数收集处理（会议/群聊/待办）
+    context_msgs = [{"role": m.role, "content": m.content} for m in request.messages[:-1]]
+    
+    try:
+        dialogue_result = await dialogue_processor.process_message(
+            user_input=last_user_message,
+            user_id=user_id,
+            context_messages=context_msgs,
+            db=db
+        )
+        
+        # 如果需要追问或确认，直接返回流式响应
+        if dialogue_result["type"] in ["clarification", "confirmation"]:
+            content = dialogue_result["content"]
+            data = dialogue_result.get("data", {})
+            print(f"🔄 多轮对话: {dialogue_result['type']} - {content[:50]}...")
+            
+            async def generate_dialogue_response():
+                save_message(session_id, "assistant", content)
+                for char in content:
+                    yield f"data: {json.dumps({'content': char})}\n\n"
+                    await asyncio.sleep(0.005)
+                
+                # 添加元数据
+                metadata = {
+                    "type": dialogue_result["type"],
+                    "session_id": data.get("session_id"),
+                    "intent": data.get("intent"),
+                    "params": data.get("params"),
+                    "missing_params": data.get("missing_params"),
+                    "collected_params": data.get("collected_params")
+                }
+                yield f"data: {json.dumps({'metadata': metadata})}\n\n"
+                yield "data: [DONE]\n\n"
+            
+            return StreamingResponse(generate_dialogue_response(), media_type="text/event-stream")
+        
+        # 如果执行成功，返回执行结果
+        elif dialogue_result["type"] == "execution":
+            content = dialogue_result["content"]
+            print(f"✅ 功能执行: {content[:50]}...")
+            
+            async def generate_execution_response():
+                save_message(session_id, "assistant", content)
+                for char in content:
+                    yield f"data: {json.dumps({'content': char})}\n\n"
+                    await asyncio.sleep(0.005)
+                yield "data: [DONE]\n\n"
+            
+            return StreamingResponse(generate_execution_response(), media_type="text/event-stream")
+        
+        # type == "chat" 继续原有逻辑
+    except Exception as e:
+        print(f"⚠️ 多轮对话处理失败，回退到原有逻辑: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    # 1. Intent Detection & Todo Extraction (原有逻辑)
     print(f"🤖 Analyzing intent for: {last_user_message[:50]}...")
     
     try:
@@ -208,9 +266,6 @@ async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session
                 sys.path.append(root_path)
             from server.services.ai_service import extract_todos_from_text
 
-        # Prepare context (exclude the last message which is the current one)
-        context_msgs = [{"role": m.role, "content": m.content} for m in request.messages[:-1]]
-        
         intent_data = extract_todos_from_text(last_user_message, context_messages=context_msgs)
             
         # If valid todo data found

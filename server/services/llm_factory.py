@@ -58,7 +58,7 @@ class ZhipuProvider(LLMProvider):
         if not self.api_key:
             raise ValueError("ZHIPUAI_API_KEY not configured")
         self.client = ZhipuAI(api_key=self.api_key)
-        self.available_models = ["glm-4-flash", "glm-4", "glm-4-plus", "glm-4-air", "glm-4-airx"]
+        self.available_models = ["glm-4.6", "glm-4-flash", "glm-4", "glm-4-plus", "glm-4-air", "glm-4-airx"]
 
     def list_models(self) -> List[str]:
         return self.available_models

@@ -936,7 +936,7 @@ def process_text_sync(text_content: str, user_id: str = None, chat_id: str = Non
                     {"role": "user", "content": text_content}
                 ]
                 resp = client.chat.completions.create(
-                    model="glm-4-flash",
+                    model="glm-4.6",
                     messages=messages,
                     temperature=0.2
                 )
@@ -1116,7 +1116,7 @@ def process_text_sync(text_content: str, user_id: str = None, chat_id: str = Non
                         {"role": "user", "content": text_content}
                     ]
                     resp = client.chat.completions.create(
-                        model="glm-4-flash",
+                        model="glm-4.6",
                         messages=messages,
                         temperature=0.3
                     )
