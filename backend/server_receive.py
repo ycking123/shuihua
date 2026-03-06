@@ -50,6 +50,7 @@ from wechatpy.utils import byte2int, to_text
 # --- Internal Imports ---
 from backend.ai_handler import analyze_chat_screenshot_with_glm4v, parse_ai_result_to_todos, analyze_text_message, analyze_intent, extract_meeting_info, extract_group_chat_info
 from backend.url_crawler import extract_meeting_url, crawl_and_parse_meeting
+from backend.wecom_session_manager import wecom_session_manager, WecomSessionManager
 
 try:
     from pypinyin import lazy_pinyin
@@ -903,7 +904,7 @@ def create_wecom_meeting(meeting_info, creator_id):
 
 def process_text_sync(text_content: str, user_id: str = None, chat_id: str = None):
     """
-    Synchronous function to process text message
+    Synchronous function to process text message with multi-turn dialogue support
     """
     logger.info(f"📝 开始后台处理文本消息 from User: {user_id} (Chat: {chat_id})")
     try:
@@ -918,215 +919,300 @@ def process_text_sync(text_content: str, user_id: str = None, chat_id: str = Non
             if crawl_result:
                 saved_count = save_meeting_data_to_db(crawl_result, system_user_id, meeting_url=meeting_url)
                 logger.info(f"✅ 会议链接处理完成，已存入数据库 (待办数: {saved_count})")
-                return # 结束处理
+                return
             else:
                 logger.warning("⚠️ 爬虫未返回有效结果")
-                # 如果爬取失败，继续走下面的逻辑吗？或者直接返回？
-                # 暂时选择继续，可能用户只是发了个坏链接，但想表达其他意思
         
-        # 1. Analyze Intent
+        # 1. 检查是否有进行中的多轮对话会话
+        active_session = wecom_session_manager.get_session(user_id)
+        
+        if active_session:
+            logger.info(f"🔄 发现活跃会话: {active_session.intent}, 状态: {active_session.status}")
+            # 处理进行中的会话
+            _handle_ongoing_session(text_content, user_id, chat_id, active_session, system_user_id)
+            return
+        
+        # 2. 没有活跃会话，进行意图识别
         intent = analyze_intent(text_content)
         logger.info(f"🧠 意图识别结果: {intent}")
         
         if intent == "chat":
-            # 闲聊/普通问答：直接调用大模型生成快速回复，不做待办处理
-            try:
-                messages = [
-                    {"role": "system", "content": "你是一个企业微信智能助手，语气专业、简洁，直接回答用户问题。"},
-                    {"role": "user", "content": text_content}
-                ]
-                resp = client.chat.completions.create(
-                    model="glm-4.6",
-                    messages=messages,
-                    temperature=0.2
-                )
-                reply_text = resp.choices[0].message.content.strip()
-                # 主动推送到企微
-                send_wecom_text(user_id, reply_text, chat_id=chat_id)
-                logger.info("✅ 闲聊回复已推送至企微")
-            except Exception as e:
-                logger.error(f"❌ 闲聊回复生成失败: {e}")
+            # 闲聊/普通问答
+            _handle_chat_intent(text_content, user_id, chat_id)
             return
         
-        elif intent == "meeting":
-            # Process Meeting
-            meeting_info = extract_meeting_info(text_content)
-            logger.info(f"📅 提取会议信息: {meeting_info}")
-            
-            # --- Normalize start_time to timestamp (int) ---
-            start_time_raw = meeting_info.get("start_time")
-            if isinstance(start_time_raw, str):
-                try:
-                    dt = datetime.strptime(start_time_raw, "%Y-%m-%d %H:%M")
-                    meeting_info["start_time"] = int(dt.timestamp())
-                except ValueError:
-                    try:
-                        dt = datetime.strptime(start_time_raw, "%Y-%m-%d %H:%M:%S")
-                        meeting_info["start_time"] = int(dt.timestamp())
-                    except ValueError:
-                        logger.warning(f"⚠️ 无法解析时间 '{start_time_raw}'，使用默认时间")
-                        meeting_info["start_time"] = int(time.time() + 1800)
-            elif not start_time_raw:
-                 meeting_info["start_time"] = int(time.time() + 1800)
-            # -----------------------------------------------
-
-            # Create Meeting
-            if create_wecom_meeting(meeting_info, user_id):
-                # Notify success (optional, could add a system notification todo)
-                try:
-                    # Construct meeting todo item
-                    meeting_time_str = datetime.fromtimestamp(meeting_info.get("start_time")).strftime("%Y-%m-%d %H:%M")
-                    
-                    todo_item = TodoItem(
-                        id=f"meeting-{int(time.time())}",
-                        type="meeting",
-                        priority="high",
-                        title=f"📅 {meeting_info.get('topic', '会议')}",
-                        sender="会议助手",
-                        time=datetime.now().strftime("%H:%M"),
-                        status="pending",
-                        aiSummary=f"时间: {meeting_time_str}",
-                        content=f"会议主题: {meeting_info.get('topic')}\n时间: {meeting_time_str}\n时长: {int(meeting_info.get('duration', 3600)/60)}分钟\n参会人: {', '.join(meeting_info.get('attendees', []))}",
-                        isUserTask=False
-                    )
-                    
-                    save_todos_to_db([todo_item], system_user_id, source_origin="wecom_meeting")
-                    todos_store.insert(0, todo_item)
-                    logger.info(f"✅ 新增会议待办事项: {todo_item.title}")
-                    # 主动推送结构化信息到企微
-                    push_text = f"会议已创建：{meeting_info.get('topic','会议')}\n时间：{meeting_time_str}\n参会人：{', '.join(meeting_info.get('attendees', []))}"
-                    send_wecom_text(user_id, push_text, chat_id=chat_id)
-                    
-                except Exception as e:
-                    logger.error(f"❌ 创建会议待办失败: {e}")
-            else:
-                # Fallback to todo if meeting creation fails? Or just log error
-                pass
-                
+        # 3. 创建新会话并提取参数
+        session = wecom_session_manager.create_session(user_id, intent, chat_id)
+        
+        # 根据意图提取参数
+        if intent == "meeting":
+            extracted_params = extract_meeting_info(text_content) or {}
         elif intent == "group_chat":
-            # 处理创建群聊意图
-            logger.info(f"👥 检测到创建群聊意图")
+            extracted_params = extract_group_chat_info(text_content) or {}
+        elif intent == "todo":
+            # 待办直接处理，不需要多轮
+            _handle_todo_intent(text_content, user_id, chat_id, system_user_id)
+            wecom_session_manager.clear_session(user_id)
+            return
+        else:
+            extracted_params = {}
+        
+        # 合并参数
+        wecom_session_manager.merge_params(user_id, extracted_params)
+        
+        # 4. 检查完整性
+        completeness = wecom_session_manager.check_completeness(user_id)
+        
+        if completeness["complete"]:
+            # 参数齐全，发送确认提示
+            confirmation = wecom_session_manager.generate_confirmation_prompt(user_id)
+            send_wecom_text(user_id, confirmation, chat_id=chat_id)
+            logger.info("✅ 参数收集完成，等待用户确认")
+        else:
+            # 参数不齐，发送追问
+            prompt = wecom_session_manager.generate_missing_prompt(user_id)
+            send_wecom_text(user_id, prompt, chat_id=chat_id)
+            logger.info(f"❓ 参数缺失，已发送追问: {completeness['missing_params']}")
 
-            # 解析群聊信息
-            group_info = extract_group_chat_info(text_content)
-            logger.info(f"📋 提取群聊信息: {group_info}")
+    except Exception as e:
+        logger.error(f"❌ 文本处理流程异常: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
 
-            user_ids = group_info.get("user_ids", [])
-            chat_name = group_info.get("chat_name", "新群聊")
 
-            # 确保创建者在成员列表中
-            if user_id and user_id not in user_ids:
-                user_ids.insert(0, user_id)
+def _handle_ongoing_session(text_content: str, user_id: str, chat_id: str, session, system_user_id: str):
+    """处理进行中的多轮对话会话"""
+    
+    # 检查用户是否取消
+    cancel_keywords = ["取消", "不", "算了", "no", "cancel", "放弃"]
+    if any(kw in text_content.lower() for kw in cancel_keywords):
+        wecom_session_manager.clear_session(user_id)
+        send_wecom_text(user_id, "已取消操作。", chat_id=chat_id)
+        logger.info("✅ 用户取消操作，会话已清理")
+        return
+    
+    # 检查用户是否确认执行
+    confirm_keywords = ["确认", "确定", "是", "好", "可以", "yes", "ok", "执行", "创建"]
+    if session.status == "ready" and any(kw in text_content for kw in confirm_keywords):
+        # 执行功能
+        _execute_session_function(user_id, chat_id, session, system_user_id)
+        return
+    
+    # 提取新参数
+    if session.intent == "meeting":
+        new_params = extract_meeting_info(text_content) or {}
+    elif session.intent == "group_chat":
+        new_params = extract_group_chat_info(text_content) or {}
+    else:
+        new_params = {}
+    
+    # 合并参数
+    wecom_session_manager.merge_params(user_id, new_params)
+    
+    # 再次检查完整性
+    completeness = wecom_session_manager.check_completeness(user_id)
+    
+    if completeness["complete"]:
+        # 参数齐全，发送确认提示
+        confirmation = wecom_session_manager.generate_confirmation_prompt(user_id)
+        send_wecom_text(user_id, confirmation, chat_id=chat_id)
+        logger.info("✅ 参数收集完成，等待用户确认")
+    else:
+        # 参数不齐，继续追问
+        prompt = wecom_session_manager.generate_missing_prompt(user_id)
+        send_wecom_text(user_id, prompt, chat_id=chat_id)
+        logger.info(f"❓ 参数仍缺失: {completeness['missing_params']}")
 
-            if len(user_ids) >= 2:
-                # 创建群聊
-                result = create_wecom_group_chat(
-                    user_ids=user_ids,
-                    chat_name=chat_name,
-                    owner=user_id
-                )
 
-                if result["success"]:
-                    # 发送欢迎消息
-                    welcome_msg = f"""
-🎉 群聊创建成功！
+def _execute_session_function(user_id: str, chat_id: str, session, system_user_id: str):
+    """执行会话功能"""
+    intent = session.intent
+    params = session.collected_params
+    
+    try:
+        if intent == "meeting":
+            _execute_meeting_creation(user_id, chat_id, params, system_user_id)
+        elif intent == "group_chat":
+            _execute_group_creation(user_id, chat_id, params, system_user_id)
+        else:
+            send_wecom_text(user_id, "未知操作类型。", chat_id=chat_id)
+        
+        # 清理会话
+        wecom_session_manager.clear_session(user_id)
+        
+    except Exception as e:
+        logger.error(f"❌ 执行功能失败: {e}")
+        send_wecom_text(user_id, f"操作失败：{str(e)}", chat_id=chat_id)
+        wecom_session_manager.clear_session(user_id)
+
+
+def _execute_meeting_creation(user_id: str, chat_id: str, params: dict, system_user_id: str):
+    """执行会议创建"""
+    # 转换时间格式
+    start_time_raw = params.get("start_time")
+    if isinstance(start_time_raw, str):
+        try:
+            dt = datetime.strptime(start_time_raw, "%Y-%m-%d %H:%M")
+            params["start_time"] = int(dt.timestamp())
+        except ValueError:
+            try:
+                dt = datetime.strptime(start_time_raw, "%Y-%m-%d %H:%M:%S")
+                params["start_time"] = int(dt.timestamp())
+            except ValueError:
+                params["start_time"] = int(time.time() + 1800)
+    elif not start_time_raw:
+        params["start_time"] = int(time.time() + 1800)
+    
+    if not params.get("duration"):
+        params["duration"] = 3600
+    
+    if create_wecom_meeting(params, user_id):
+        meeting_time_str = datetime.fromtimestamp(params.get("start_time")).strftime("%Y-%m-%d %H:%M")
+        
+        # 创建待办记录
+        todo_item = TodoItem(
+            id=f"meeting-{int(time.time())}",
+            type="meeting",
+            priority="high",
+            title=f"📅 {params.get('topic', '会议')}",
+            sender="会议助手",
+            time=datetime.now().strftime("%H:%M"),
+            status="pending",
+            aiSummary=f"时间: {meeting_time_str}",
+            content=f"会议主题: {params.get('topic')}\n时间: {meeting_time_str}\n时长: {int(params.get('duration', 3600)/60)}分钟\n参会人: {', '.join(params.get('attendees', []))}",
+            isUserTask=False
+        )
+        save_todos_to_db([todo_item], system_user_id, source_origin="wecom_meeting")
+        todos_store.insert(0, todo_item)
+        
+        # 发送成功消息
+        push_text = f"✅ 会议创建成功！\n📅 主题：{params.get('topic','会议')}\n⏰ 时间：{meeting_time_str}\n👥 参会人：{', '.join(params.get('attendees', []))}"
+        send_wecom_text(user_id, push_text, chat_id=chat_id)
+        logger.info("✅ 会议创建成功")
+    else:
+        send_wecom_text(user_id, "❌ 会议创建失败，请稍后重试。", chat_id=chat_id)
+
+
+def _execute_group_creation(user_id: str, chat_id: str, params: dict, system_user_id: str):
+    """执行群聊创建"""
+    user_ids = params.get("user_ids", [])
+    chat_name = params.get("chat_name", "新群聊")
+    
+    # 确保创建者在成员列表中
+    if user_id and user_id not in user_ids:
+        user_ids.insert(0, user_id)
+    
+    if len(user_ids) < 2:
+        send_wecom_text(user_id, "❌ 创建群聊需要至少2名成员。", chat_id=chat_id)
+        return
+    
+    result = create_wecom_group_chat(
+        user_ids=user_ids,
+        chat_name=chat_name,
+        owner=user_id
+    )
+    
+    if result["success"]:
+        # 发送欢迎消息
+        welcome_msg = f"""🎉 群聊创建成功！
 
 📋 群名称：{chat_name}
 👥 成员：{', '.join(user_ids)}
 📢 创建人：{user_id}
 
-欢迎大家加入，开始协作！
-                    """.strip()
+欢迎大家加入，开始协作！"""
+        send_wecom_group_message(result["chatid"], welcome_msg)
+        
+        # 回复创建者
+        reply_text = f"✅ 群聊『{chat_name}』创建成功！已将 {len(user_ids)} 位成员加入群聊。"
+        send_wecom_text(user_id, reply_text, chat_id=chat_id)
+        
+        # 创建待办记录
+        todo_item = TodoItem(
+            id=f"group-chat-{int(time.time())}",
+            type="chat_record",
+            priority="normal",
+            title=f"👥 创建群聊: {chat_name}",
+            sender=user_id,
+            time=datetime.now().strftime("%H:%M"),
+            status="completed",
+            aiSummary=f"成员: {', '.join(user_ids)}",
+            content=f"群聊名称: {chat_name}\n成员: {', '.join(user_ids)}\n创建时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            isUserTask=False
+        )
+        save_todos_to_db([todo_item], system_user_id, source_origin="wecom_group_chat")
+        todos_store.insert(0, todo_item)
+        logger.info(f"✅ 群聊创建成功: {result['chatid']}")
+    else:
+        error_msg = f"❌ 群聊创建失败：{result['message']}"
+        send_wecom_text(user_id, error_msg, chat_id=chat_id)
+        logger.error(f"❌ 群聊创建失败: {result['message']}")
 
-                    send_wecom_group_message(result["chatid"], welcome_msg)
 
-                    # 回复创建者
-                    reply_text = f"✅ 群聊『{chat_name}』创建成功！已将 {len(user_ids)} 位成员加入群聊。"
-                    send_wecom_text(user_id, reply_text, chat_id=chat_id)
-
-                    # 创建待办记录
-                    todo_item = TodoItem(
-                        id=f"group-chat-{int(time.time())}",
-                        type="chat_record",
-                        priority="normal",
-                        title=f"👥 创建群聊: {chat_name}",
-                        sender=user_id,
-                        time=datetime.now().strftime("%H:%M"),
-                        status="completed",
-                        aiSummary=f"成员: {', '.join(user_ids)}",
-                        content=f"群聊名称: {chat_name}\n成员: {', '.join(user_ids)}\n创建时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-                        isUserTask=False
-                    )
-                    save_todos_to_db([todo_item], system_user_id, source_origin="wecom_group_chat")
-                    todos_store.insert(0, todo_item)
-
-                    logger.info(f"✅ 群聊创建成功: {result['chatid']}")
-                else:
-                    # 创建失败
-                    error_msg = f"❌ 群聊创建失败：{result['message']}"
-                    send_wecom_text(user_id, error_msg, chat_id=chat_id)
-                    logger.error(f"❌ 群聊创建失败: {result['message']}")
-            else:
-                # 成员不足
-                reply_text = "创建群聊需要至少2名成员。请使用以下格式：\n创建群聊 群名称 @user1 @user2\n或：\n创建群聊 项目讨论群\n成员: user1,user2,user3"
-                send_wecom_text(user_id, reply_text, chat_id=chat_id)
-
-        elif intent == "todo":
-            # Process Todo (Original Logic)
-            # 1. Call AI Analysis (reuse logic)
-            json_result = None
-            try:
-                json_result = analyze_text_message(text_content)
-            except Exception as e:
-                logger.error(f"❌ 文本待办分析失败: {e}")
-
-            # 2. Parse and Store Results
-            if json_result:
-                new_todos = parse_ai_result_to_todos(json_result, user_id)
-                if new_todos:
-                    for todo_data in new_todos:
-                        todo_data['textType'] = 1
-
-                        if todo_data.get('title') == "待定":
-                            todo_data['title'] = text_content[:50]
-                    saved_count = save_todos_to_db(new_todos, system_user_id, source_origin="wecom_text")
-                    for todo_data in new_todos:
-                        try:
-                            todo_item = TodoItem(**todo_data)
-                            todos_store.insert(0, todo_item)
-
-                            logger.info(f"✅ 新增文本待办事项: {todo_item.title}")
-                        except Exception as e:
-                            logger.error(f"❌ 数据模型转换失败: {e}")
-                    logger.info(f"✅ 文本分析完成，已添加 {saved_count} 条待办")
-
-                    # 构造回复消息
-                    reply_text = f"已为您创建 {saved_count} 条待办事项：\n"
-                    for i, t in enumerate(new_todos, 1):
-                        reply_text += f"{i}. {t.get('title')} (截止: {t.get('aiSummary')})\n"
-
-                    send_wecom_text(user_id, reply_text, chat_id=chat_id)
-                else:
-                    logger.warning("⚠️ AI 分析结果解析为空")
-            else:
-                # 智能兜底：调用大模型生成解释性回复
-                try:
-                    messages = [
-                        {"role": "system", "content": "你是一个企业微信智能助手。用户希望创建任务，但系统暂未提取到有效结构。请用简洁可执行的建议回复，并提示用户补充任务关键字段（标题/时间/责任人/优先级）。"},
-                        {"role": "user", "content": text_content}
-                    ]
-                    resp = client.chat.completions.create(
-                        model="glm-4.6",
-                        messages=messages,
-                        temperature=0.3
-                    )
-                    reply_text = resp.choices[0].message.content.strip()
-                    send_wecom_text(user_id, reply_text, chat_id=chat_id)
-                except Exception as e:
-                    logger.error(f"❌ 智能兜底失败: {e}")
-
+def _handle_chat_intent(text_content: str, user_id: str, chat_id: str):
+    """处理闲聊意图"""
+    try:
+        messages = [
+            {"role": "system", "content": "你是一个企业微信智能助手，语气专业、简洁，直接回答用户问题。"},
+            {"role": "user", "content": text_content}
+        ]
+        resp = client.chat.completions.create(
+            model="glm-4.6",
+            messages=messages,
+            temperature=0.2
+        )
+        reply_text = resp.choices[0].message.content.strip()
+        send_wecom_text(user_id, reply_text, chat_id=chat_id)
+        logger.info("✅ 闲聊回复已推送至企微")
     except Exception as e:
-        logger.error(f"❌ 文本处理流程异常: {e}")
+        logger.error(f"❌ 闲聊回复生成失败: {e}")
+
+
+def _handle_todo_intent(text_content: str, user_id: str, chat_id: str, system_user_id: str):
+    """处理待办意图（直接处理，不需要多轮）"""
+    try:
+        json_result = analyze_text_message(text_content)
+        
+        if json_result:
+            new_todos = parse_ai_result_to_todos(json_result, user_id)
+            if new_todos:
+                for todo_data in new_todos:
+                    todo_data['textType'] = 1
+                    if todo_data.get('title') == "待定":
+                        todo_data['title'] = text_content[:50]
+                
+                saved_count = save_todos_to_db(new_todos, system_user_id, source_origin="wecom_text")
+                
+                for todo_data in new_todos:
+                    try:
+                        todo_item = TodoItem(**todo_data)
+                        todos_store.insert(0, todo_item)
+                        logger.info(f"✅ 新增文本待办事项: {todo_item.title}")
+                    except Exception as e:
+                        logger.error(f"❌ 数据模型转换失败: {e}")
+                
+                # 构造回复消息
+                reply_text = f"已为您创建 {saved_count} 条待办事项：\n"
+                for i, t in enumerate(new_todos, 1):
+                    reply_text += f"{i}. {t.get('title')} (截止: {t.get('aiSummary')})\n"
+                send_wecom_text(user_id, reply_text, chat_id=chat_id)
+            else:
+                logger.warning("⚠️ AI 分析结果解析为空")
+        else:
+            # 智能兜底
+            messages = [
+                {"role": "system", "content": "你是一个企业微信智能助手。用户希望创建任务，但系统暂未提取到有效结构。请用简洁可执行的建议回复，并提示用户补充任务关键字段（标题/时间/责任人/优先级）。"},
+                {"role": "user", "content": text_content}
+            ]
+            resp = client.chat.completions.create(
+                model="glm-4.6",
+                messages=messages,
+                temperature=0.3
+            )
+            reply_text = resp.choices[0].message.content.strip()
+            send_wecom_text(user_id, reply_text, chat_id=chat_id)
+    except Exception as e:
+        logger.error(f"❌ 待办处理失败: {e}")
 
 def process_file_sync(media_id: str, file_name: str, file_ext: str, user_id: str):
     """
