@@ -1,8 +1,22 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Brain, Database, ChevronDown, ChevronRight, Globe, Mic, MicOff } from 'lucide-react';
+import { Send, Brain, Database, ChevronDown, ChevronRight, Globe, Mic, MicOff, Square } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import OntologySphere from './OntologySphere';
+
+// 统一获取后端 API 地址
+// 开发模式：使用 Vite 代理（相对路径），不走直连避免跨域问题
+// 生产模式：优先使用 VITE_BACKEND_URL 环境变量，否则使用相对路径
+const getApiUrl = (path: string): string => {
+  if (import.meta.env.DEV) {
+    return path;
+  }
+  const backendUrl = import.meta.env.VITE_BACKEND_URL;
+  if (backendUrl) {
+    return `${backendUrl}${path}`;
+  }
+  return path;
+};
 
 interface Message {
   id: string | number;
@@ -46,7 +60,7 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
   const [isRagEnabled, setIsRagEnabled] = useState(false);
   const [isWebSearchEnabled, setIsWebSearchEnabled] = useState(false);
   const [models, setModels] = useState<Model[]>([]);
-  const [selectedModel, setSelectedModel] = useState<string>('MiniMaxAI/MiniMax-M2.5');
+  const [selectedModel, setSelectedModel] = useState<string>('Qwen/Qwen3.5-397B-A17B-FP8');
   const [sphereStatus, setSphereStatus] = useState<'idle' | 'thinking' | 'working'>('idle');
   const messagesEndRef = useRef<HTMLDivElement>(null); 
   
@@ -54,6 +68,7 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef<any>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const startRecording = async () => {
     // Check if browser supports mediaDevices
@@ -206,17 +221,13 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
   useEffect(() => {
       const fetchModels = async () => {
           try {
-              const getBackendUrl = () => {
-                  if (import.meta.env.DEV) return '/api/chat/models';
-                  return `http://${window.location.hostname}:8000/api/chat/models`;
-              };
-              const res = await fetch(getBackendUrl());
+              const res = await fetch(getApiUrl('/api/chat/models'));
               if (res.ok) {
                   const data = await res.json();
                   setModels(data);
                   if (data.length > 0) {
                       // Keep default if exists, else take first
-                      const hasDefault = data.find((m: Model) => m.id === 'MiniMaxAI/MiniMax-M2.5');
+                      const hasDefault = data.find((m: Model) => m.id === 'Qwen/Qwen3.5-397B-A17B-FP8');
                       if (!hasDefault) {
                           setSelectedModel(data[0].id);
                       }
@@ -236,12 +247,7 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
             const token = localStorage.getItem('token');
             if (!token) return;
 
-            const getBackendUrl = () => {
-                if (import.meta.env.DEV) return '/api/chat/history';
-                return `http://${window.location.hostname}:8000/api/chat/history`;
-            };
-
-            const res = await fetch(getBackendUrl(), {
+            const res = await fetch(getApiUrl('/api/chat/history'), {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             
@@ -277,6 +283,10 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
     const content = text || inputValue;
     if (!content.trim() || isThinking) return;
 
+    // 创建 AbortController 以支持中断请求
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
     // Add user message
     const userMsg: Message = { id: Date.now(), type: 'user', content };
     setMessages(prev => [...prev, userMsg]);
@@ -289,17 +299,7 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
     setMessages(prev => [...prev, { id: agentMsgId, type: 'agent', content: '' }]);
 
     try {
-      // Determine backend URL based on environment
-      const getBackendUrl = () => {
-          // Use Vite proxy in development mode
-          if (import.meta.env.DEV) {
-               return '/api/chat';
-          }
-          // Otherwise use the same hostname as the frontend
-          return `http://${window.location.hostname}:8000/api/chat`;
-      };
-
-      const backendUrl = getBackendUrl();
+      const backendUrl = getApiUrl('/api/chat');
       const token = localStorage.getItem('token');
       const headers: HeadersInit = {
         'Content-Type': 'application/json'
@@ -312,6 +312,7 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
       const response = await fetch(backendUrl, {
           method: 'POST',
           headers: headers,
+          signal: abortController.signal,
           body: JSON.stringify({ 
             messages: [...messages.map(m => ({ role: m.type === 'user' ? 'user' : 'assistant', content: m.content })), { role: 'user', content }],
             use_rag: isRagEnabled,
@@ -327,39 +328,54 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
       const decoder = new TextDecoder();
       let accumulatedContent = '';
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n\n');
-        
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const dataStr = line.replace('data: ', '').trim();
-            if (dataStr === '[DONE]') break;
-            
-            try {
-              const data = JSON.parse(dataStr);
-              if (data.content) {
-                accumulatedContent += data.content;
-                setMessages(prev => prev.map(m => 
-                  m.id === agentMsgId ? { ...m, content: accumulatedContent } : m
-                ));
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\n\n');
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const dataStr = line.replace('data: ', '').trim();
+              if (dataStr === '[DONE]') break;
+              
+              try {
+                const data = JSON.parse(dataStr);
+                if (data.content) {
+                  accumulatedContent += data.content;
+                  setMessages(prev => prev.map(m => 
+                    m.id === agentMsgId ? { ...m, content: accumulatedContent } : m
+                  ));
+                }
+              } catch (e) {
+                console.error('Error parsing SSE chunk', e);
               }
-            } catch (e) {
-              console.error('Error parsing SSE chunk', e);
             }
           }
         }
+      } catch (readError: any) {
+        // 如果是用户主动中断，不视为错误
+        if (readError.name === 'AbortError') {
+          console.log('Stream reading aborted by user');
+        } else {
+          throw readError;
+        }
       }
     } catch (e: any) {
+      // 用户主动中断不显示错误提示
+      if (e.name === 'AbortError') {
+        console.log('Request aborted by user');
+        return;
+      }
       console.error(e);
       const errorMessage = e.message || 'Unknown error';
       setMessages(prev => prev.map(m => 
-        m.id === agentMsgId ? { ...m, content: `系统连接异常: ${errorMessage}。请确保后端服务已在 8000 端口启动。` } : m
+        m.id === agentMsgId ? { ...m, content: `系统连接异常: ${errorMessage}。请检查后端服务是否正常运行，以及网络连接是否可达。` } : m
       ));
     } finally {
+      abortControllerRef.current = null;
       setIsThinking(false);
       setSphereStatus('idle');
     }
@@ -494,15 +510,23 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
                 <div className="flex items-start w-full">
                      <textarea
                         value={inputValue}
-                        disabled={isThinking}
                         onChange={(e) => setInputValue(e.target.value)}
                         onKeyDown={(e) => {
                             if (e.key === 'Enter' && !e.shiftKey) {
                                 e.preventDefault();
-                                handleSend();
+                                if (isThinking) {
+                                    // 正在生成时按回车：先中断当前，再发送新消息
+                                    if (abortControllerRef.current) {
+                                        abortControllerRef.current.abort();
+                                    }
+                                    // 等待状态重置后发送
+                                    setTimeout(() => handleSend(), 100);
+                                } else {
+                                    handleSend();
+                                }
                             }
                         }}
-                        placeholder={isThinking ? "思维推演中..." : "输入您的战略指令..."}
+                        placeholder={isThinking ? "输入新问题可中断当前回复..." : "输入您的战略指令..."}
                         className="w-full bg-transparent border-none focus:outline-none text-[14px] text-slate-800 dark:text-white placeholder:text-slate-300 dark:placeholder:text-slate-700 font-light resize-none h-[48px] max-h-[120px]"
                     />
                 </div>
@@ -566,20 +590,34 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
                                     {m.name}
                                 </option>
                             ))}
-                            {models.length === 0 && <option value="MiniMaxAI/MiniMax-M2.5">MiniMax-M2.5</option>}
+                            {models.length === 0 && <option value="Qwen/Qwen3.5-397B-A17B-FP8">Qwen3.5-397B</option>}
                         </select>
                     </div>
 
-                    {/* Send Button */}
-                    <button
-                        onClick={() => handleSend()}       
-                        disabled={isThinking || !inputValue.trim()}
-                        className={`w-9 h-9 rounded-full flex items-center justify-center text-white active:scale-90 transition-all ${
-                        isThinking || !inputValue.trim() ? 'bg-slate-100 dark:bg-white/5 text-slate-300 dark:text-slate-800' : 'bg-blue-600 shadow-lg glow-blue'       
-                        }`}
-                    >
-                        <Send size={14} />
-                    </button>
+                    {/* 发送/停止按钮 */}
+                    {isThinking ? (
+                        <button
+                            onClick={() => {
+                                if (abortControllerRef.current) {
+                                    abortControllerRef.current.abort();
+                                }
+                            }}
+                            className="w-9 h-9 rounded-full flex items-center justify-center text-white active:scale-90 transition-all bg-red-500 shadow-lg animate-pulse"
+                            title="停止生成"
+                        >
+                            <Square size={12} fill="white" />
+                        </button>
+                    ) : (
+                        <button
+                            onClick={() => handleSend()}
+                            disabled={!inputValue.trim()}
+                            className={`w-9 h-9 rounded-full flex items-center justify-center text-white active:scale-90 transition-all ${
+                            !inputValue.trim() ? 'bg-slate-100 dark:bg-white/5 text-slate-300 dark:text-slate-800' : 'bg-blue-600 shadow-lg glow-blue'
+                            }`}
+                        >
+                            <Send size={14} />
+                        </button>
+                    )}
                 </div>
             </div>
         </div>
@@ -589,6 +627,7 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
 };
 
 export default ChatView;
+
 
 
 

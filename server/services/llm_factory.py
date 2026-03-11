@@ -15,15 +15,15 @@ class LLMProvider(ABC):
         """Stream chat response."""
         pass
 
-class LocalLLMProvider(LLMProvider):
+class QwenProvider(LLMProvider):
+    """Qwen 模型提供商，通过 shuihua.ai API 调用"""
     def __init__(self):
-        # Using the provided endpoint for MiniMax
-        api_key = os.getenv("MINIMAX_API_KEY", "sk-Bh3wSeeq_LJOHUYyfKus6Q")
+        api_key = os.getenv("QWEN_API_KEY", "sk-Bh3wSeeq_LJOHUYyfKus6Q")
         self.client = OpenAI(
             api_key=api_key, 
             base_url="https://api.shuihua.ai/v1"
         )
-        self.model_name = "MiniMaxAI/MiniMax-M2.5"
+        self.model_name = "Qwen/Qwen3.5-397B-A17B-FP8"
 
     def list_models(self) -> List[str]:
         return [self.model_name]
@@ -35,21 +35,16 @@ class LocalLLMProvider(LLMProvider):
         
         final_messages.extend(messages)
 
-        # Using parameters from the user provided curl example
-        # max_tokens: 256k -> approx 262144, but let's use a safe large number like 4096 or similar if output is limited.
-        # But user explicitly asked for 256k.
         response = self.client.chat.completions.create(
             model=model,
             messages=final_messages,
             stream=True,
-            temperature=1,
-            top_p=0.95,
-            max_tokens=4096, 
-            extra_body={"top_k": 40}
+            max_tokens=2048,
+            extra_body={"include_reasoning": False}
         )
         
         for chunk in response:
-            if chunk.choices[0].delta.content:
+            if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
 
 class ZhipuProvider(LLMProvider):
@@ -80,6 +75,37 @@ class ZhipuProvider(LLMProvider):
             if chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
 
+class MiniMaxProvider(LLMProvider):
+    """MiniMax 模型提供商，通过 shuihua.ai API 调用"""
+    def __init__(self):
+        api_key = os.getenv("MINIMAX_API_KEY", "sk-Bh3wSeeq_LJOHUYyfKus6Q")
+        self.client = OpenAI(
+            api_key=api_key,
+            base_url="https://api.shuihua.ai/v1"
+        )
+        self.model_name = "MiniMaxAI/MiniMax-M2.5"
+
+    def list_models(self) -> List[str]:
+        return [self.model_name]
+
+    def chat_stream(self, model: str, messages: List[dict], system_instruction: str = None) -> Generator[Any, None, None]:
+        final_messages = []
+        if system_instruction:
+            final_messages.append({"role": "system", "content": system_instruction})
+        
+        final_messages.extend(messages)
+
+        response = self.client.chat.completions.create(
+            model=model,
+            messages=final_messages,
+            stream=True,
+            max_tokens=2048,
+        )
+        
+        for chunk in response:
+            if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
+
 class LLMFactory:
     _providers = {}
 
@@ -94,8 +120,11 @@ class LLMFactory:
         if model_name.startswith("glm"):
             return ZhipuProvider()
         
-        if model_name.startswith("MiniMaxAI"): # includes MiniMax-M2.5
-            return LocalLLMProvider()
+        if model_name.startswith("Qwen"):
+            return QwenProvider()
+        
+        if model_name.startswith("MiniMax"):
+            return MiniMaxProvider()
         
         # Default to Zhipu for now if unknown, or raise error
         # Ideally we check which provider supports the model
@@ -111,17 +140,27 @@ class LLMFactory:
             zhipu = ZhipuProvider()
             for m in zhipu.list_models():
                 models.append({"id": m, "name": m, "provider": "Zhipu AI"})
+            print(f"✅ ZhipuProvider 加载成功，模型数: {len(zhipu.list_models())}")
         except Exception as e:
-            print(f"Error initializing ZhipuProvider: {e}")
+            print(f"⚠️ ZhipuProvider 初始化失败（智谱模型不可用）: {e}")
+            print(f"   请检查环境变量 ZHIPUAI_API_KEY 或 LOCAL_ZHIPU_APIKEY 是否已配置")
             
         try:
-            local = LocalLLMProvider()
-            for m in local.list_models():
+            qwen = QwenProvider()
+            for m in qwen.list_models():
+                models.append({"id": m, "name": m, "provider": "Qwen"})
+        except Exception as e:
+            print(f"Error initializing QwenProvider: {e}")
+        
+        try:
+            minimax = MiniMaxProvider()
+            for m in minimax.list_models():
                 models.append({"id": m, "name": m, "provider": "MiniMax"})
         except Exception as e:
-            print(f"Error initializing LocalLLMProvider: {e}")
+            print(f"Error initializing MiniMaxProvider: {e}")
             
         return models
+
 
 
 

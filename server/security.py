@@ -33,6 +33,19 @@ pwd_context = CryptContext(schemes=["pbkdf2_sha256", "bcrypt"], deprecated="auto
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 
+def verify_sys_password(plain_password: str, stored_password: str) -> bool:
+    """验证 sys_user 表的密码（兼容 bcrypt 哈希和明文）"""
+    if not stored_password:
+        return False
+    # 哈希格式（以 $ 开头），使用 passlib 验证
+    if stored_password.startswith('$'):
+        try:
+            return pwd_context.verify(plain_password, stored_password)
+        except Exception:
+            return False
+    # 旧数据明文对比
+    return plain_password == stored_password
+
 def get_password_hash(password):
     return pwd_context.hash(password)
 
@@ -52,5 +65,6 @@ def verify_token(token: str):
         return payload
     except Exception:
         return None
+
 
 

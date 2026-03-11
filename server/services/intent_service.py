@@ -45,7 +45,8 @@ class IntentService:
     """意图识别服务"""
     
     def __init__(self):
-        self.provider = LLMFactory.get_provider("glm-4.6")
+        self.provider = LLMFactory.get_provider("MiniMaxAI/MiniMax-M2.5")
+        self.model_name = "MiniMaxAI/MiniMax-M2.5"
     
     def detect_intent(self, user_input: str, context_messages: List[Dict] = None) -> Dict[str, Any]:
         """
@@ -82,7 +83,7 @@ class IntentService:
         
         try:
             response = self.provider.chat_stream(
-                model="glm-4.6",
+                model=self.model_name,
                 messages=messages
             )
             
@@ -174,7 +175,7 @@ class IntentService:
         
         try:
             response = self.provider.chat_stream(
-                model="glm-4.6",
+                model=self.model_name,
                 messages=messages
             )
             
@@ -243,7 +244,7 @@ class IntentService:
         
         try:
             response = self.provider.chat_stream(
-                model="glm-4.6",
+                model=self.model_name,
                 messages=messages
             )
             
@@ -317,7 +318,7 @@ class IntentService:
         
         try:
             response = self.provider.chat_stream(
-                model="glm-4.6",
+                model=self.model_name,
                 messages=messages
             )
             
@@ -438,3 +439,4 @@ class IntentService:
 
 # 全局意图服务实例
 intent_service = IntentService()
+

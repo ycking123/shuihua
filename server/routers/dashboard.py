@@ -46,13 +46,13 @@ def process_single_query(query_config: dict) -> dict:
             try:
                 truncated_content = combined_content[:15000]
                 
-                provider = LLMFactory.get_provider("MiniMaxAI/MiniMax-M2.1")
+                provider = LLMFactory.get_provider("Qwen/Qwen3.5-397B-A17B-FP8")
                 messages = [
                     {"role": "user", "content": f"请针对搜索关键词“{q}”，根据以下搜索结果进行简要总结，提取核心重点（如政策要点、具体动态等），去除无关信息。要求总结精炼，长度控制在100字以内。\n\n搜索结果：\n{truncated_content}"}
                 ]
                 
                 summary = ""
-                for chunk in provider.chat_stream("MiniMaxAI/MiniMax-M2.1", messages):
+                for chunk in provider.chat_stream("Qwen/Qwen3.5-397B-A17B-FP8", messages):
                     summary += chunk
                 
                 if not summary:
@@ -223,5 +223,6 @@ async def refresh_strategy(db: Session = Depends(get_db)):
         db.rollback()
     
     return {"results": valid_results}
+
 
 

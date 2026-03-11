@@ -65,7 +65,7 @@ def get_todos(http_request: Request, db: Session = Depends(get_db), sort_by: str
     获取待办列表
     sort_by: "created_at" (发送时间) | "meeting_start_time" (会议时间)
     """
-    user_id = "00000000-0000-0000-0000-000000000000"
+    user_id = "0"
     auth_header = http_request.headers.get("Authorization")
     if auth_header and auth_header.startswith("Bearer "):
         token = auth_header.split(" ")[1]
@@ -120,21 +120,9 @@ def add_todo(todo: TodoItemSchema, http_request: Request, db: Session = Depends(
         except Exception:
             pass
     
-    # 如果没有有效的 user_id，使用默认用户或第一个用户
-    from ..models import User
+    # 如果没有有效的 user_id，拒绝请求
     if not user_id:
-        # 尝试使用默认用户
-        default_user = db.query(User).filter(User.id == "00000000-0000-0000-0000-000000000000").first()
-        if default_user:
-            user_id = default_user.id
-        else:
-            # 使用第一个可用用户
-            first_user = db.query(User).first()
-            if first_user:
-                user_id = first_user.id
-    
-    if not user_id:
-        raise HTTPException(status_code=500, detail="No users found in database")
+        raise HTTPException(status_code=401, detail="未登录，无法创建待办")
 
     new_todo = Todo(
         id=str(uuid.uuid4()),
@@ -329,3 +317,4 @@ def delete_todo(todo_id: str, http_request: Request, db: Session = Depends(get_d
     db.commit()
     
     return {"message": "Todo deleted successfully", "id": todo_id}
+

@@ -15,37 +15,32 @@
 #
 # ============================================================================
 
-from sqlalchemy import Column, String, Integer, Boolean, Text, DateTime, JSON, Enum, ForeignKey
+from sqlalchemy import Column, String, Integer, BigInteger, Boolean, Text, DateTime, JSON, Enum, ForeignKey
 from sqlalchemy.sql import func
 from .database import Base
 import uuid
 
-# 定义 Enum 类型 (为了与 SQL 中的 ENUM 匹配，但在 SQLAlchemy 中也可以使用 String)
-# 这里为了兼容性，使用 String 存储 Enum 值，应用层校验
-# 或者使用 SQLAlchemy 的 Enum 类型
 
-class User(Base):
-    __tablename__ = "shjl_users"
+class SysUser(Base):
+    """系统用户表（映射 sys_user），用于登录认证"""
+    __tablename__ = "sys_user"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    username = Column(String(50), unique=True, nullable=False)
-    email = Column(String(100), unique=True)
-    password_hash = Column(String(255), nullable=False)
-    wecom_userid = Column(String(100), unique=True)
-    full_name = Column(String(50))
-    avatar_url = Column(Text)
-    role_id = Column(Integer) # 简化，暂不定义 Role 表关系
-    is_active = Column(Boolean, default=True)
-    last_login_at = Column(DateTime)
-    created_at = Column(DateTime, default=func.now())
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
-    is_deleted = Column(Boolean, default=False)
+    user_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    dept_id = Column(BigInteger)
+    user_name = Column(String(30), nullable=False)
+    nick_name = Column(String(30), nullable=False)
+    password = Column(String(100))
+    status = Column(String(1), default='0')      # '0' 正常 '1' 停用
+    del_flag = Column(String(1), default='0')     # '0' 正常 '2' 已删除
+    avatar = Column(String(100))
+    phonenumber = Column(String(11))
+    dept_path = Column(String(500))
 
 class Todo(Base):
     __tablename__ = "shjl_todos"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String(36), ForeignKey("shjl_users.id"), nullable=False)
+    user_id = Column(String(36), nullable=False)
     title = Column(String(255), nullable=False)
     content = Column(Text) # LONGTEXT in MySQL
     type = Column(String(20), default="task") # 'task', 'email', 'approval', 'meeting', 'chat_record'
@@ -72,7 +67,7 @@ class ChatSession(Base):
     __tablename__ = "shjl_chat_sessions"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String(36), ForeignKey("shjl_users.id"), nullable=False)
+    user_id = Column(String(36), nullable=False)
     title = Column(String(100))
     summary = Column(Text)
     is_pinned = Column(Boolean, default=False)
@@ -108,7 +103,7 @@ class Meeting(Base):
     __tablename__ = "shjl_meetings"
     
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    organizer_id = Column(String(36), ForeignKey("shjl_users.id"))
+    organizer_id = Column(String(36))
     title = Column(String(255), nullable=False)
     description = Column(Text)
     start_time = Column(DateTime, nullable=False)
@@ -133,6 +128,7 @@ class StrategyDaily(Base):
     icon_type = Column(String(50))
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
 
 
 

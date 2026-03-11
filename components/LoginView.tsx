@@ -6,7 +6,6 @@ interface LoginViewProps {
 }
 
 const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
-  const [isRegistering, setIsRegistering] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -17,7 +16,6 @@ const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     setIsLoading(true);
     setError('');
 
-    const endpoint = isRegistering ? '/api/auth/register' : '/api/auth/login';
     const payload = { username, password };
 
     try {
@@ -37,7 +35,7 @@ const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
       };
       
       const baseUrl = getBackendUrl();
-      const fetchUrl = `${baseUrl}${endpoint}`;
+      const fetchUrl = `${baseUrl}/api/auth/login`;
       console.log(`Attempting login to: ${fetchUrl}`);
 
       const response = await fetch(fetchUrl, {
@@ -142,29 +140,19 @@ const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
               <Loader2 className="animate-spin mr-2" size={18} />
             ) : (
               <>
-                {isRegistering ? '注册并登录' : '登 录'}
+                登 录
                 <ArrowRight className="ml-2" size={18} />
               </>
             )}
           </button>
         </form>
 
-        <div className="mt-6 text-center">
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            {isRegistering ? '已有账号？' : '还没有账号？'}
-            <button
-              onClick={() => setIsRegistering(!isRegistering)}
-              className="ml-1 font-medium text-blue-600 hover:text-blue-500 focus:outline-none transition-colors"
-            >
-              {isRegistering ? '直接登录' : '立即注册'}
-            </button>
-          </p>
-        </div>
       </div>
     </div>
   );
 };
 
 export default LoginView;
+
 
 

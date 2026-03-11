@@ -5,18 +5,19 @@ import re
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
-from zhipuai import ZhipuAI
+from openai import OpenAI
 
 # Load environment variables
 # Try loading from .env in server root or project root
 env_path = Path(__file__).resolve().parent.parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
-ZHIPU_API_KEY = os.getenv("ZHIPUAI_API_KEY")
-if not ZHIPU_API_KEY:
-    ZHIPU_API_KEY = os.getenv("LOCAL_ZHIPU_APIKEY")
-
-client = ZhipuAI(api_key=ZHIPU_API_KEY)
+# 使用 MiniMax 作为意图识别/待办提取的 LLM
+client = OpenAI(
+    api_key=os.getenv("MINIMAX_API_KEY", "sk-Bh3wSeeq_LJOHUYyfKus6Q"),
+    base_url="https://api.shuihua.ai/v1"
+)
+INTENT_MODEL = "MiniMaxAI/MiniMax-M2.5"
 
 def extract_todos_from_text(text_content, context_messages=None):
     """
@@ -118,7 +119,7 @@ def extract_todos_from_text(text_content, context_messages=None):
 
     try:
         response = client.chat.completions.create(
-            model="glm-4.6",
+            model=INTENT_MODEL,
             messages=messages_payload,
             temperature=0.1,
         )
@@ -147,4 +148,5 @@ def extract_todos_from_text(text_content, context_messages=None):
     except Exception as e:
         print(f"❌ 文本待办提取失败: {e}")
         return None
+
 

@@ -50,7 +50,12 @@ if ZHIPU_API_KEY:
         rag_manager = KnowledgeBaseManager(
             api_key=ZHIPU_API_KEY,
             base_data_dir=str(rag_base_dir / "data"),
-            base_storage_dir=str(rag_base_dir / "storage_multi")
+            base_storage_dir=str(rag_base_dir / "storage_multi"),
+            # 管道步骤开关 — 可通过环境变量灵活配置
+            enable_context_compression=os.getenv("RAG_ENABLE_COMPRESSION", "false").lower() == "true",
+            enable_query_rewrite=os.getenv("RAG_ENABLE_QUERY_REWRITE", "true").lower() == "true",
+            num_query_rewrites=int(os.getenv("RAG_NUM_QUERY_REWRITES", "2")),
+            enable_rerank=os.getenv("RAG_ENABLE_RERANK", "true").lower() == "true",
         )
         print("✅ Local RAG Manager initialized successfully.")
     except Exception as e:
@@ -67,7 +72,7 @@ class Message(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: list[Message]
-    model: str = "MiniMaxAI/MiniMax-M2.5"
+    model: str = "Qwen/Qwen3.5-397B-A17B-FP8"
     use_rag: bool = True  # Default to True for enterprise knowledge base
     use_search: bool = False
 
@@ -139,7 +144,7 @@ def save_message(session_id: str, role: str, content: str):
 @router.get("/api/chat/history")
 def get_chat_history(http_request: Request, db: Session = Depends(get_db)):
     # Authenticate
-    user_id = "00000000-0000-0000-0000-000000000000"
+    user_id = "0"
     auth_header = http_request.headers.get("Authorization")
     if auth_header and auth_header.startswith("Bearer "):
         token = auth_header.split(" ")[1]
@@ -171,7 +176,7 @@ def get_chat_history(http_request: Request, db: Session = Depends(get_db)):
 @router.post("/api/chat")
 async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session = Depends(get_db)):
     # Extract user_id from token if available
-    user_id = "00000000-0000-0000-0000-000000000000"
+    user_id = "0"
     auth_header = http_request.headers.get("Authorization")
     if auth_header and auth_header.startswith("Bearer "):
         token = auth_header.split(" ")[1]
@@ -245,122 +250,130 @@ async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session
             return StreamingResponse(generate_execution_response(), media_type="text/event-stream")
         
         # type == "chat" 继续原有逻辑
+        # dialogue_processor 已经用 LLM 判断了 intent == "chat"
+        # 设置标记避免后续重复的意图检测（extract_todos_from_text 会做几乎相同的判断）
+        skip_intent_detection = (dialogue_result["type"] == "chat")
     except Exception as e:
         print(f"⚠️ 多轮对话处理失败，回退到原有逻辑: {e}")
         import traceback
         traceback.print_exc()
+        skip_intent_detection = False
     
     # 1. Intent Detection & Todo Extraction (原有逻辑)
-    print(f"🤖 Analyzing intent for: {last_user_message[:50]}...")
-    
-    try:
-        # Use shared function from server/services/ai_service.py
-        try:
-            from ..services.ai_service import extract_todos_from_text
-        except ImportError:
-            # Fallback if relative import fails (e.g. running script directly)
-            import sys
-            from pathlib import Path
-            root_path = str(Path(__file__).resolve().parent.parent.parent)
-            if root_path not in sys.path:
-                sys.path.append(root_path)
-            from server.services.ai_service import extract_todos_from_text
-
-        intent_data = extract_todos_from_text(last_user_message, context_messages=context_msgs)
-            
-        # If valid todo data found
-        if intent_data and intent_data.get("is_todo"):
-            # Case 1: Clarification Needed
-            if intent_data.get("status") == "clarification_needed":
-                question = intent_data.get("clarification_question", "请补充缺失的信息。")
-                print(f"❓ Clarification needed: {question}")
-                
-                async def generate_question():
-                    save_message(session_id, "assistant", question)
-                    for char in question:
-                        yield f"data: {json.dumps({'content': char})}\n\n"
-                        await asyncio.sleep(0.005)
-                    yield "data: [DONE]\n\n"
-                
-                return StreamingResponse(generate_question(), media_type="text/event-stream")
-
-            # Case 2: Completed (Create Task)
-            elif intent_data.get("status") == "completed" or intent_data.get("task_list"):
-                task_list = intent_data.get("task_list", [])
-                summary_text = intent_data.get("summary", "已为您创建相关待办事项")
-                
-                created_tasks = []
-                
-                for t in task_list:
-                    # Map fields
-                    title = t.get('title', '新任务')
-                    description = t.get('description', '')
-                    
-                    # 优先级映射逻辑优化
-                    # AI 返回的可能是：高、紧急、High、Urgent 等
-                    # 数据库通常使用：high (高/重要), urgent (紧急), normal (普通), low (低)
-                    raw_priority = t.get('priority', '').strip()
-                    
-                    priority = "high" # 默认为 high
-                    
-                    if raw_priority in ["紧急", "Urgent", "urgent", "Critical", "critical"]:
-                         priority = "urgent"
-                    elif raw_priority in ["高", "High", "high", "重要", "Important"]:
-                         priority = "high"
-                    elif raw_priority in ["中", "Medium", "medium", "普通", "Normal"]:
-                         priority = "normal"
-                    elif raw_priority in ["低", "Low", "low"]:
-                         priority = "low"
-                         
-                    due_date = t.get('due_date')
-                    assignee = t.get('assignee')
-                    task_type = t.get('type', 'task')
-                    
-                    # Create in DB
-                    new_todo = create_todo_internal(
-                        db, 
-                        title, 
-                        description, # Use description as summary/content
-                        priority, 
-                        task_type,
-                        due_date,
-                        assignee,
-                        user_id=user_id # Pass the authenticated user_id
-                    )
-                    created_tasks.append(f"- **{title}** (责任人: {assignee}, 截止: {due_date})")
-                
-                # 3. Stream Confirmation
-                async def generate_confirmation():
-                    msg = f"{summary_text}\n\n已创建 {len(created_tasks)} 个任务：\n" + "\n".join(created_tasks)
-                    
-                    # Save Assistant Response to DB
-                    save_message(session_id, "assistant", msg)
-                    
-                    # Simulate streaming for consistent UX
-                    for char in msg:
-                        yield f"data: {json.dumps({'content': char})}\n\n"
-                        await asyncio.sleep(0.005) 
-                    yield "data: [DONE]\n\n"
-                    
-                return StreamingResponse(generate_confirmation(), media_type="text/event-stream")
-
-    except Exception as e:
-        import traceback
-        print(f"❌ Intent detection/Creation failed: {e}")
-        traceback.print_exc()
+    # 仅在 dialogue_processor 未判断为 "chat" 或处理失败时执行
+    if not skip_intent_detection:
+        print(f"🤖 Analyzing intent for: {last_user_message[:50]}...")
         
-        # If we were trying to create a todo and failed, tell the user!
-        # Do NOT fallback to normal chat, which would hallucinate success.
-        if 'intent_data' in locals() and intent_data and intent_data.get("is_todo"):
-             async def generate_error():
-                err_msg = f"⚠️ 抱歉，任务创建失败。\n错误原因：{str(e)}\n请确保您已登录，且系统服务正常。"
-                save_message(session_id, "assistant", err_msg)
-                yield f"data: {json.dumps({'content': err_msg})}\n\n"
-                yield "data: [DONE]\n\n"
-             return StreamingResponse(generate_error(), media_type="text/event-stream")
+        try:
+            # Use shared function from server/services/ai_service.py
+            try:
+                from ..services.ai_service import extract_todos_from_text
+            except ImportError:
+                # Fallback if relative import fails (e.g. running script directly)
+                import sys
+                from pathlib import Path
+                root_path = str(Path(__file__).resolve().parent.parent.parent)
+                if root_path not in sys.path:
+                    sys.path.append(root_path)
+                from server.services.ai_service import extract_todos_from_text
 
-        # Only fallback for non-todo errors (e.g. AI service failure)
-        # Fallback to normal chat
+            intent_data = extract_todos_from_text(last_user_message, context_messages=context_msgs)
+                
+            # If valid todo data found
+            if intent_data and intent_data.get("is_todo"):
+                # Case 1: Clarification Needed
+                if intent_data.get("status") == "clarification_needed":
+                    question = intent_data.get("clarification_question", "请补充缺失的信息。")
+                    print(f"❓ Clarification needed: {question}")
+                    
+                    async def generate_question():
+                        save_message(session_id, "assistant", question)
+                        for char in question:
+                            yield f"data: {json.dumps({'content': char})}\n\n"
+                            await asyncio.sleep(0.005)
+                        yield "data: [DONE]\n\n"
+                    
+                    return StreamingResponse(generate_question(), media_type="text/event-stream")
+
+                # Case 2: Completed (Create Task)
+                elif intent_data.get("status") == "completed" or intent_data.get("task_list"):
+                    task_list = intent_data.get("task_list", [])
+                    summary_text = intent_data.get("summary", "已为您创建相关待办事项")
+                    
+                    created_tasks = []
+                    
+                    for t in task_list:
+                        # Map fields
+                        title = t.get('title', '新任务')
+                        description = t.get('description', '')
+                        
+                        # 优先级映射逻辑优化
+                        # AI 返回的可能是：高、紧急、High、Urgent 等
+                        # 数据库通常使用：high (高/重要), urgent (紧急), normal (普通), low (低)
+                        raw_priority = t.get('priority', '').strip()
+                        
+                        priority = "high" # 默认为 high
+                        
+                        if raw_priority in ["紧急", "Urgent", "urgent", "Critical", "critical"]:
+                             priority = "urgent"
+                        elif raw_priority in ["高", "High", "high", "重要", "Important"]:
+                             priority = "high"
+                        elif raw_priority in ["中", "Medium", "medium", "普通", "Normal"]:
+                             priority = "normal"
+                        elif raw_priority in ["低", "Low", "low"]:
+                             priority = "low"
+                             
+                        due_date = t.get('due_date')
+                        assignee = t.get('assignee')
+                        task_type = t.get('type', 'task')
+                        
+                        # Create in DB
+                        new_todo = create_todo_internal(
+                            db, 
+                            title, 
+                            description, # Use description as summary/content
+                            priority, 
+                            task_type,
+                            due_date,
+                            assignee,
+                            user_id=user_id # Pass the authenticated user_id
+                        )
+                        created_tasks.append(f"- **{title}** (责任人: {assignee}, 截止: {due_date})")
+                    
+                    # 3. Stream Confirmation
+                    async def generate_confirmation():
+                        msg = f"{summary_text}\n\n已创建 {len(created_tasks)} 个任务：\n" + "\n".join(created_tasks)
+                        
+                        # Save Assistant Response to DB
+                        save_message(session_id, "assistant", msg)
+                        
+                        # Simulate streaming for consistent UX
+                        for char in msg:
+                            yield f"data: {json.dumps({'content': char})}\n\n"
+                            await asyncio.sleep(0.005) 
+                        yield "data: [DONE]\n\n"
+                        
+                    return StreamingResponse(generate_confirmation(), media_type="text/event-stream")
+
+        except Exception as e:
+            import traceback
+            print(f"❌ Intent detection/Creation failed: {e}")
+            traceback.print_exc()
+            
+            # If we were trying to create a todo and failed, tell the user!
+            # Do NOT fallback to normal chat, which would hallucinate success.
+            if 'intent_data' in locals() and intent_data and intent_data.get("is_todo"):
+                 async def generate_error():
+                    err_msg = f"⚠️ 抱歉，任务创建失败。\n错误原因：{str(e)}\n请确保您已登录，且系统服务正常。"
+                    save_message(session_id, "assistant", err_msg)
+                    yield f"data: {json.dumps({'content': err_msg})}\n\n"
+                    yield "data: [DONE]\n\n"
+                 return StreamingResponse(generate_error(), media_type="text/event-stream")
+
+            # Only fallback for non-todo errors (e.g. AI service failure)
+            # Fallback to normal chat
+    else:
+        print(f"⏩ 跳过意图检测（dialogue_processor 已判断为普通聊天）")
     
     try:
         # 4. Normal Chat Flow (Fallthrough)
@@ -404,6 +417,32 @@ async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session
         # Convert Pydantic messages to dict
         messages_dicts = [{"role": m.role, "content": m.content} for m in request.messages]
         
+        # 分层滑动窗口：保留最近 10 轮（20条消息），最近 3 轮原文，较早 7 轮截断压缩
+        MAX_ROUNDS = 10          # 最多保留 10 轮对话
+        FULL_ROUNDS = 3          # 最近 3 轮保留完整原文
+        USER_TRUNCATE = 150      # 较早轮次用户消息截断字数
+        ASSISTANT_TRUNCATE = 300 # 较早轮次AI回复截断字数
+        
+        max_messages = MAX_ROUNDS * 2  # 每轮 2 条（user + assistant）
+        if len(messages_dicts) > max_messages:
+            messages_dicts = messages_dicts[-max_messages:]
+        
+        full_count = FULL_ROUNDS * 2  # 最近 3 轮保留原文的消息数
+        compressed_messages = []
+        for i, msg in enumerate(messages_dicts):
+            # 最后 full_count 条消息保留原文
+            if i >= len(messages_dicts) - full_count:
+                compressed_messages.append(msg)
+            else:
+                # 较早的消息做截断压缩
+                content = msg["content"]
+                limit = USER_TRUNCATE if msg["role"] == "user" else ASSISTANT_TRUNCATE
+                if len(content) > limit:
+                    content = content[:limit] + "..."
+                compressed_messages.append({"role": msg["role"], "content": content})
+        
+        messages_dicts = compressed_messages
+        
         response_generator = provider.chat_stream(
             model=request.model,
             messages=messages_dicts,
@@ -412,10 +451,37 @@ async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session
 
         async def generate():
             full_response = ""
-            for content in response_generator:
-                full_response += content
-                yield f"data: {json.dumps({'content': content})}\n\n"
-                await asyncio.sleep(0.005)
+            # 将同步 generator 放入线程中执行，避免阻塞事件循环
+            import queue
+            import threading
+            
+            chunk_queue = queue.Queue()
+            
+            def run_sync_generator():
+                try:
+                    for content in response_generator:
+                        chunk_queue.put(content)
+                except Exception as e:
+                    chunk_queue.put(e)
+                finally:
+                    chunk_queue.put(None)  # 哨兵值表示结束
+            
+            thread = threading.Thread(target=run_sync_generator, daemon=True)
+            thread.start()
+            
+            while True:
+                # 非阻塞式等待队列数据
+                while chunk_queue.empty():
+                    await asyncio.sleep(0.01)
+                
+                item = chunk_queue.get()
+                if item is None:
+                    break
+                if isinstance(item, Exception):
+                    raise item
+                
+                full_response += item
+                yield f"data: {json.dumps({'content': item})}\n\n"
             
             # Save Assistant Response to DB
             if full_response:
@@ -430,6 +496,7 @@ async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session
         print(f"❌ Chat generation failed: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+
 
 
 

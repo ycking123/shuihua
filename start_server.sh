@@ -44,6 +44,16 @@ nohup python -m server.main > "$LOG_DIR/main_server.log" 2>&1 &
 MAIN_PID=$!
 echo "      PID: $MAIN_PID | Log: $LOG_DIR/main_server.log"
 
+# 等待后端就绪
+echo "      Waiting for backend (port 8000)..."
+for i in $(seq 1 30); do
+    if curl -s http://localhost:8000/api/health > /dev/null 2>&1; then
+        echo "      ✅ Backend is ready!"
+        break
+    fi
+    sleep 1
+done
+
 # 2. 启动企业微信后端 (Port 8080)
 echo "[2/3] Starting WeChat Backend (backend.server_receive)..."
 nohup python -m backend.server_receive > "$LOG_DIR/wechat_server.log" 2>&1 &
@@ -69,5 +79,6 @@ echo "Frontend:       http://localhost:3000"
 echo "You can close this terminal session now."
 echo "To stop services, run: ./stop_server.sh"
 echo "=================================================="
+
 
 

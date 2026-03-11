@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from ..database import get_db
-from ..models import Meeting, User, Todo
+from ..models import Meeting, Todo
 from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
