@@ -1,0 +1,47 @@
+# ==============================================================
+# 项目完整依赖清单（合并 server + backend + llamaindex 所有模块）
+# 安装命令: pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+# ==============================================================
+
+# ---------- Web 框架 ----------
+fastapi
+uvicorn
+pydantic
+python-multipart
+
+# ---------- 数据库 ----------
+sqlalchemy
+pymysql
+
+# ---------- 认证与安全 ----------
+python-jose
+passlib
+bcrypt
+
+# ---------- 环境与工具 ----------
+python-dotenv
+requests
+
+# ---------- AI / LLM ----------
+zhipuai
+openai
+tavily-python
+google-generativeai
+
+# ---------- LlamaIndex RAG 引擎 ----------
+llama-index-core
+llama-index-embeddings-zhipuai
+llama-index-llms-zhipuai
+llama-index-retrievers-bm25
+
+# ---------- 企业微信 ----------
+wechatpy
+websockets
+
+# ---------- 文档处理 ----------
+PyMuPDF
+pypinyin
+
+# ---------- 浏览器自动化（爬虫）----------
+playwright
+

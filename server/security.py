@@ -21,6 +21,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from jose import jwt
 from passlib.context import CryptContext
+import bcrypt
 import os
 
 # 配置
@@ -28,23 +29,33 @@ SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-should-be-in-env")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30 * 24 * 60  # 30 days for convenience
 
-pwd_context = CryptContext(schemes=["pbkdf2_sha256", "bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 def verify_password(plain_password, hashed_password):
+    """验证 pbkdf2_sha256 格式的密码"""
     return pwd_context.verify(plain_password, hashed_password)
 
 def verify_sys_password(plain_password: str, stored_password: str) -> bool:
-    """验证 sys_user 表的密码（兼容 bcrypt 哈希和明文）"""
+    """验证 sys_user 表的密码（支持 bcrypt 和 pbkdf2_sha256 哈希）"""
     if not stored_password:
         return False
-    # 哈希格式（以 $ 开头），使用 passlib 验证
+    # bcrypt 哈希格式：$2a$, $2b$, $2y$
+    if stored_password.startswith('$2'):
+        try:
+            return bcrypt.checkpw(
+                plain_password.encode('utf-8'),
+                stored_password.encode('utf-8')
+            )
+        except Exception:
+            return False
+    # pbkdf2_sha256 等其他 passlib 支持的哈希格式
     if stored_password.startswith('$'):
         try:
             return pwd_context.verify(plain_password, stored_password)
         except Exception:
             return False
-    # 旧数据明文对比
-    return plain_password == stored_password
+    # 非哈希格式一律拒绝，不允许明文密码
+    return False
 
 def get_password_hash(password):
     return pwd_context.hash(password)

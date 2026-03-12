@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 from datetime import datetime
 from sqlalchemy.orm import Session
 from ..database import get_db
-from ..models import ChatSession, ChatMessage
+from ..models import ChatSession, ChatMessage, SysUser, SysDept
 from ..database import SessionLocal
 from ..security import verify_token
 from .todos import create_todo_internal
@@ -56,6 +56,7 @@ if ZHIPU_API_KEY:
             enable_query_rewrite=os.getenv("RAG_ENABLE_QUERY_REWRITE", "true").lower() == "true",
             num_query_rewrites=int(os.getenv("RAG_NUM_QUERY_REWRITES", "2")),
             enable_rerank=os.getenv("RAG_ENABLE_RERANK", "true").lower() == "true",
+            min_relevance_score=float(os.getenv("RAG_MIN_RELEVANCE_SCORE", "0.35")),
         )
         print("✅ Local RAG Manager initialized successfully.")
     except Exception as e:
@@ -81,7 +82,41 @@ def get_available_models():
     """List all available LLM models."""
     return LLMFactory.get_all_models()
 
-async def fetch_rag_context(query: str) -> str:
+def get_user_allowed_kb_categories(db: Session, user_id: str) -> list:
+    """根据用户部门层级判定可访问的知识库分类"""
+    try:
+        uid = int(user_id)
+    except (ValueError, TypeError):
+        return []
+
+    user = db.query(SysUser).filter(SysUser.user_id == uid).first()
+    if not user or not user.dept_id:
+        return []
+
+    dept = db.query(SysDept).filter(SysDept.dept_id == user.dept_id).first()
+    if not dept:
+        return []
+
+    # 收集当前部门 + 所有祖先部门ID
+    dept_ids = {user.dept_id}
+    if dept.ancestors:
+        for anc in dept.ancestors.split(','):
+            anc = anc.strip()
+            if anc.isdigit():
+                dept_ids.add(int(anc))
+
+    categories = []
+    # 部门101层级 → oceano 知识库
+    if 101 in dept_ids:
+        categories.append('oceano')
+    # 部门102/104/105层级 → monarch 知识库
+    if dept_ids & {102, 104, 105}:
+        categories.append('monarch')
+
+    print(f"📂 用户 {user_id} (dept={user.dept_id}, ancestors={dept.ancestors}) → 允许知识库: {categories}")
+    return categories
+
+async def fetch_rag_context(query: str, allowed_categories: list = None) -> str:
     """
     Retrieve relevant context from the local multi-source knowledge base.
     """
@@ -89,11 +124,15 @@ async def fetch_rag_context(query: str) -> str:
         print("⚠️ KnowledgeBaseManager is not initialized. Skipping RAG.")
         return ""
     
-    print(f"🚀 [Local-RAG] Searching knowledge base for: {query}")
+    if allowed_categories is not None and len(allowed_categories) == 0:
+        print("⚠️ 用户无任何知识库访问权限，跳过RAG检索")
+        return ""
+    
+    print(f"🚀 [Local-RAG] Searching knowledge base for: {query} (allowed: {allowed_categories})")
     try:
         # Since retrieve_all_documents is synchronous (calling APIs internally), 
         # run it in a thread to avoid blocking the event loop.
-        context = await asyncio.to_thread(rag_manager.retrieve_all_documents, query)
+        context = await asyncio.to_thread(rag_manager.retrieve_all_documents, query, allowed_categories=allowed_categories)
         
         if context:
             print(f"✅ [Local-RAG] Retrieved context length: {len(context)} chars")
@@ -395,9 +434,21 @@ async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session
         # 4b. Knowledge Base RAG (if enabled)
         if request.use_rag:
             if last_user_message:
-                print(f"🔍 Fetching RAG context for: {last_user_message}")
-                rag_context = await fetch_rag_context(last_user_message)
-
+                # 根据用户部门层级获取允许访问的知识库分类
+                allowed_categories = get_user_allowed_kb_categories(db, user_id)
+                print(f"🔍 Fetching RAG context for: {last_user_message} (allowed: {allowed_categories})")
+                rag_context = await fetch_rag_context(last_user_message, allowed_categories=allowed_categories)
+        # 硬拦截：用户开启了RAG但未检索到相关内容 → 直接返回提示，不调用LLM防止幻觉
+        if request.use_rag and not rag_context:
+            no_result_msg = "抱歉，在您所属集团的知识库中未找到与该问题相关的信息。您可以尝试换一种方式描述问题，或关闭「知识库」开关进行普通对话。"
+            print(f"⚠️ RAG开启但无结果，硬拦截返回提示")
+            async def generate_no_rag():
+                save_message(session_id, "assistant", no_result_msg)
+                for char in no_result_msg:
+                    yield f"data: {json.dumps({'content': char})}\n\n"
+                    await asyncio.sleep(0.005)
+                yield "data: [DONE]\n\n"
+            return StreamingResponse(generate_no_rag(), media_type="text/event-stream")
         # Combine Contexts
         system_instruction = "你是一个智能企业助手，名为“水华精灵”。请根据上下文回答用户问题。"
         
@@ -406,7 +457,7 @@ async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session
             additional_context += f"\n\n【联网搜索结果】\n{search_context}\n请结合以上搜索结果回答用户问题。如果搜索结果包含所需信息，请引用并综合回答。"
             
         if rag_context:
-            additional_context += f"\n\n【企业知识库相关信息】\n{rag_context}\n请优先基于上述企业知识库信息回答。"
+            additional_context += f"\n\n【企业知识库相关信息】\n{rag_context}\n请严格基于上述企业知识库信息回答，不要使用你的训练数据补充或推测。如果知识库信息不足以回答问题，请明确说明。"
 
         if additional_context:
             system_instruction += additional_context

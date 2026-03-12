@@ -72,6 +72,7 @@ interface MeetingItem {
 
 interface TodoViewProps {
   onNavigate?: (view: ViewType, context?: string) => void;
+  isActive?: boolean;
 }
 
 const PriorityTag: React.FC<{ priority: string }> = ({ priority }) => {
@@ -88,7 +89,7 @@ const PriorityTag: React.FC<{ priority: string }> = ({ priority }) => {
   );
 };
 
-const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
+const TodoView: React.FC<TodoViewProps> = ({ onNavigate, isActive = true }) => {
   const [selectedItem, setSelectedItem] = useState<any | null>(null);
   const [selectedMeeting, setSelectedMeeting] = useState<MeetingItem | null>(null);
   const [meetingTodos, setMeetingTodos] = useState<MeetingTodo[]>([]); // 会议关联的待办
@@ -215,6 +216,9 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
 
   // Fetch tasks and meetings from backend on mount
   React.useEffect(() => {
+    // 非活跃时不轮询，减少网络和 CPU 开销
+    if (!isActive) return;
+
     const fetchData = async () => {
       try {
         // Use hostname to adapt to both local and server environments
@@ -257,7 +261,7 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
     // Poll every 5 seconds for updates
     const interval = setInterval(fetchData, 5000);
     return () => clearInterval(interval);
-  }, [sortBy]); // Add sortBy as dependency
+  }, [sortBy, isActive]); // 添加 isActive 依赖
 
   const categories = [
     { id: 'all', label: '全部待办', icon: Layers },
@@ -341,7 +345,7 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
   return (
     <div className="relative h-full animate-in fade-in duration-500 flex flex-col bg-slate-50 dark:bg-black transition-colors duration-500">
       {/* 顶部标题与分类导航 */}
-      <div className="shrink-0 p-6 flex flex-col border-b border-slate-200 dark:border-white/5 bg-white/40 dark:bg-black/40 backdrop-blur-xl z-20">
+      <div className="shrink-0 p-6 flex flex-col border-b border-slate-200 dark:border-white/5 bg-white/90 dark:bg-black/80 z-20">
         <div className="flex items-center justify-between mb-6">
           <div className="flex flex-col">
             <h2 className="text-2xl font-bold flex items-center gap-2 text-slate-900 dark:text-white">
@@ -568,7 +572,7 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
       {/* 任务详情抽屉 */}
       {selectedItem && createPortal(
         <div className="fixed inset-0 z-[200] bg-white dark:bg-black animate-in slide-in-from-right duration-300 flex flex-col transition-colors duration-500">
-          <div className="shrink-0 bg-white/95 dark:bg-black/95 backdrop-blur-xl border-b border-slate-200 dark:border-white/5 p-4 flex items-center justify-between z-50 shadow-sm safe-area-top">
+          <div className="shrink-0 bg-white dark:bg-black border-b border-slate-200 dark:border-white/5 p-4 flex items-center justify-between z-50 shadow-sm safe-area-top">
             <button 
               onClick={() => setSelectedItem(null)} 
               className="px-4 py-2 bg-slate-100 dark:bg-white/10 rounded-full text-slate-900 dark:text-white flex items-center gap-2 active:scale-90 transition-all hover:bg-slate-200 dark:hover:bg-white/20"
@@ -632,7 +636,7 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
       {/* 会议详情抽屉 - 三大模块展示 */}
       {selectedMeeting && createPortal(
         <div className="fixed inset-0 z-[200] bg-white dark:bg-black animate-in slide-in-from-right duration-300 flex flex-col transition-colors duration-500">
-          <div className="shrink-0 bg-white/95 dark:bg-black/95 backdrop-blur-xl border-b border-slate-200 dark:border-white/5 p-4 flex items-center justify-between z-50 shadow-sm safe-area-top">
+          <div className="shrink-0 bg-white dark:bg-black border-b border-slate-200 dark:border-white/5 p-4 flex items-center justify-between z-50 shadow-sm safe-area-top">
             <button 
               onClick={() => setSelectedMeeting(null)} 
               className="px-4 py-2 bg-slate-100 dark:bg-white/10 rounded-full text-slate-900 dark:text-white flex items-center gap-2 active:scale-90 transition-all hover:bg-slate-200 dark:hover:bg-white/20"
@@ -839,6 +843,7 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate }) => {
 };
 
 export default TodoView;
+
 
 
 

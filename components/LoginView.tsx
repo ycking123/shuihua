@@ -72,11 +72,11 @@ const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900 transition-colors duration-500 relative overflow-hidden">
       {/* Background Decor */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0">
-        <div className="absolute -top-[30%] -right-[10%] w-[70%] h-[70%] rounded-full bg-blue-400/20 blur-3xl" />
-        <div className="absolute -bottom-[20%] -left-[10%] w-[60%] h-[60%] rounded-full bg-indigo-500/20 blur-3xl" />
+        <div className="absolute -top-[30%] -right-[10%] w-[70%] h-[70%] rounded-full bg-blue-400/10" />
+        <div className="absolute -bottom-[20%] -left-[10%] w-[60%] h-[60%] rounded-full bg-indigo-500/10" />
       </div>
 
-      <div className="z-10 w-full max-w-md p-8 bg-white/80 dark:bg-black/40 backdrop-blur-xl border border-white/20 rounded-2xl shadow-2xl">
+      <div className="z-10 w-full max-w-md p-8 bg-white/95 dark:bg-black/80 border border-white/20 rounded-2xl shadow-2xl">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 mb-2">
             水华精灵

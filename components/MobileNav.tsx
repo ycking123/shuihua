@@ -21,7 +21,7 @@ const MobileNav: React.FC<MobileNavProps> = ({ activeView, setActiveView }) => {
 
   return (
     <div className="fixed bottom-8 left-6 right-6 z-[100] animate-in slide-in-from-bottom-10 duration-700">
-      <div className="glass-card rounded-[2.2rem] px-3 py-3 border-slate-200/60 dark:border-white/10 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.1)] dark:shadow-[0_20px_50px_-12px_rgba(0,0,0,0.5)] flex items-center justify-between backdrop-blur-3xl bg-white/70 dark:bg-black/60 transition-all">
+      <div className="glass-card rounded-[2.2rem] px-3 py-3 border-slate-200/60 dark:border-white/10 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.1)] dark:shadow-[0_20px_50px_-12px_rgba(0,0,0,0.5)] flex items-center justify-between bg-white/90 dark:bg-black/80 transition-all">
         {mobileTabs.map((tab) => {
           const isActive = activeView === tab.id;
           return (
@@ -35,7 +35,7 @@ const MobileNav: React.FC<MobileNavProps> = ({ activeView, setActiveView }) => {
               <div className="relative">
                 <tab.icon size={19} className={`transition-transform duration-300 ${isActive ? 'scale-110 drop-shadow-[0_0_8px_rgba(37,99,235,0.3)]' : 'scale-100'}`} />
                 {tab.badge && (
-                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-black animate-pulse shadow-sm"></span>
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-black shadow-sm"></span>
                 )}
               </div>
               <span className={`text-[7.5px] font-bold tracking-tighter uppercase transition-opacity whitespace-nowrap ${isActive ? 'opacity-100' : 'opacity-50'}`}>
@@ -53,3 +53,4 @@ const MobileNav: React.FC<MobileNavProps> = ({ activeView, setActiveView }) => {
 };
 
 export default MobileNav;
+

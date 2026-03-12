@@ -36,6 +36,17 @@ class SysUser(Base):
     phonenumber = Column(String(11))
     dept_path = Column(String(500))
 
+class SysDept(Base):
+    """系统部门表（映射 sys_dept），用于部门层级和知识库权限判定"""
+    __tablename__ = "sys_dept"
+
+    dept_id = Column(BigInteger, primary_key=True)
+    parent_id = Column(BigInteger, default=0)
+    ancestors = Column(String(500))    # 祖先部门ID链，逗号分隔，如 "0,100,101,107"
+    dept_name = Column(String(30))
+    status = Column(String(1), default='0')
+    del_flag = Column(String(1), default='0')
+
 class Todo(Base):
     __tablename__ = "shjl_todos"
 

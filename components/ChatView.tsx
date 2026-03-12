@@ -39,7 +39,7 @@ const ThinkingProcess = ({ content }: { content: string }) => {
         className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-slate-200/50 dark:hover:bg-white/10 transition-colors"
         onClick={() => setIsExpanded(!isExpanded)}
       >
-        <Brain size={14} className="text-slate-500 animate-pulse" />
+        <Brain size={14} className="text-slate-500" />
         <span className="text-xs font-medium text-slate-500">深度思考过程</span>
         {isExpanded ? <ChevronDown size={12} className="text-slate-400"/> : <ChevronRight size={12} className="text-slate-400"/>}
       </div>
@@ -53,7 +53,7 @@ const ThinkingProcess = ({ content }: { content: string }) => {
   );
 };
 
-const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () => void }> = ({ initialContext, onClearContext }) => {
+const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () => void; isActive?: boolean }> = ({ initialContext, onClearContext, isActive = true }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');    
   const [isThinking, setIsThinking] = useState(false); 
@@ -386,12 +386,12 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
 
       {/* 顶部交互区 */}
       <div className={`shrink-0 transition-all duration-700 ease-[cubic-bezier(0.23,1,0.32,1)] relative z-30 border-b border-slate-200 dark:border-white/5 ${        
-        hasInteracted ? 'h-[80px] bg-white/70 dark:bg-black/70 backdrop-blur-3xl' : 'h-[260px]'
+        hasInteracted ? 'h-[80px] bg-white/90 dark:bg-black/90' : 'h-[260px]'
       }`}>
         <div className={`absolute transition-all duration-1000 ease-[cubic-bezier(0.23,1,0.32,1)] ${
             hasInteracted ? '-left-12 top-1/2 -translate-y-1/2 scale-[0.45]' : 'left-1/2 -translate-x-1/2 top-4 scale-100'
         }`}>
-           <OntologySphere status={sphereStatus} />    
+           <OntologySphere status={sphereStatus} isActive={isActive} />    
         </div>
 
         <div className={`absolute transition-all duration-700 ${
@@ -400,7 +400,7 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
             {!hasInteracted ? (
                 <div className="text-center animate-in fade-in duration-1000 px-6">
                     <div className="flex items-center justify-center gap-2 mb-2 text-slate-400 dark:text-slate-500 font-mono text-[9px] uppercase tracking-[0.4em]"> 
-                       <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse glow-blue"></div>   
+                       <div className="w-1.5 h-1.5 rounded-full bg-blue-500 glow-blue"></div>   
                        STRATEGIC_HUD_ACTIVE
                     </div>
                     <h1 className="text-2xl font-bold text-slate-900 dark:text-white leading-tight">
@@ -504,7 +504,7 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
       <div className="fixed bottom-[116px] left-0 right-0 px-5 z-40 pb-safe transition-all duration-500">     
         <div className="max-w-2xl mx-auto relative group">
             <div className="absolute inset-0 bg-blue-600/5 dark:bg-blue-900/10 blur-[30px] rounded-[2rem] -z-10 group-focus-within:bg-blue-600/10 dark:group-focus-within:bg-blue-800/20 transition-all"></div>
-            <div className="relative glass-card bg-white/95 dark:bg-black/70 backdrop-blur-3xl rounded-[2rem] border-slate-200 dark:border-white/10 p-4 shadow-2xl flex flex-col gap-3">
+            <div className="relative glass-card bg-white/95 dark:bg-black/90 rounded-[2rem] border-slate-200 dark:border-white/10 p-4 shadow-2xl flex flex-col gap-3">
                 
                 {/* Input Area */}
                 <div className="flex items-start w-full">

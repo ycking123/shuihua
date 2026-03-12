@@ -4,40 +4,21 @@ import { Sparkles, Wallet, ChevronRight, Target, Radar, Box, Cpu, Zap, Gem, Rece
 import { ViewType } from '../types';
 import ShareSheet from './ShareSheet';
 
-// 市场态势背景组件 - 优化为自适应
-const MarketSentimentBackground: React.FC<{ sentiment: 'positive' | 'negative' | 'neutral' }> = ({ sentiment }) => {
-  const config = {
-    positive: {
-      color: 'rgba(16, 185, 129, 0.1)', // 翠绿色
-      secondary: 'rgba(59, 130, 246, 0.08)', // 蓝色
-      animation: 'animate-pulse-slow'
-    },
-    negative: {
-      color: 'rgba(239, 68, 68, 0.1)', // 红色
-      secondary: 'rgba(139, 92, 246, 0.08)', // 紫色
-      animation: 'animate-pulse-fast'
-    },
-    neutral: {
-      color: 'rgba(148, 163, 184, 0.08)', // 灰色
-      secondary: 'rgba(0, 0, 0, 0)',
-      animation: 'animate-breathe'
-    }
-  }[sentiment];
+// 市场态势背景组件 - 使用轻量 CSS 渐变替代 GPU 密集的 blur 动画
+const MarketSentimentBackground: React.FC<{ sentiment: 'positive' | 'negative' | 'neutral'; isActive?: boolean }> = ({ sentiment, isActive = true }) => {
+  if (!isActive) return null;
+
+  const gradientMap = {
+    positive: 'radial-gradient(ellipse at 20% 20%, rgba(16,185,129,0.06) 0%, transparent 60%), radial-gradient(ellipse at 80% 80%, rgba(59,130,246,0.04) 0%, transparent 60%)',
+    negative: 'radial-gradient(ellipse at 20% 20%, rgba(239,68,68,0.06) 0%, transparent 60%), radial-gradient(ellipse at 80% 80%, rgba(139,92,246,0.04) 0%, transparent 60%)',
+    neutral: 'radial-gradient(ellipse at 50% 50%, rgba(148,163,184,0.04) 0%, transparent 70%)',
+  };
 
   return (
-    <div className="fixed inset-0 pointer-events-none z-[-1] overflow-hidden opacity-60 dark:opacity-100">
-      <div 
-        className={`absolute -top-[20%] -left-[10%] w-[70%] h-[70%] rounded-full blur-[120px] transition-colors duration-2000 ease-in-out ${config.animation}`}
-        style={{ backgroundColor: config.color }}
-      />
-      <div 
-        className={`absolute -bottom-[10%] -right-[5%] w-[60%] h-[60%] rounded-full blur-[100px] transition-colors duration-2000 ease-in-out delay-1000 ${config.animation}`}
-        style={{ backgroundColor: config.secondary }}
-      />
-      <div className="absolute inset-0 opacity-20 dark:opacity-40">
-        <div className={`absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,white_100%)] dark:bg-[radial-gradient(circle_at_center,transparent_0%,black_100%)]`} />
-      </div>
-    </div>
+    <div 
+      className="fixed inset-0 pointer-events-none z-[-1]"
+      style={{ background: gradientMap[sentiment] }}
+    />
   );
 };
 
@@ -488,7 +469,7 @@ const InsightItem: React.FC<{
     }
   ];
 
-const Dashboard: React.FC<{ onNavigate: (v: ViewType, ctx?: string) => void }> = ({ onNavigate }) => {
+const Dashboard: React.FC<{ onNavigate: (v: ViewType, ctx?: string) => void; isActive?: boolean }> = ({ onNavigate, isActive = true }) => {
   const [shareConfig, setShareConfig] = useState<{ isOpen: boolean; data: any }>({ isOpen: false, data: {} });
   const [expandedInsightId, setExpandedInsightId] = useState<string | null>(null);
   const [expandedClusterId, setExpandedClusterId] = useState<string | null>(null);
@@ -665,7 +646,7 @@ const Dashboard: React.FC<{ onNavigate: (v: ViewType, ctx?: string) => void }> =
 
   return (
     <div className="p-4 space-y-7 animate-in fade-in duration-700 bg-transparent relative">
-      <MarketSentimentBackground sentiment={marketSentiment} />
+      <MarketSentimentBackground sentiment={marketSentiment} isActive={isActive} />
       <ShareSheet isOpen={shareConfig.isOpen} onClose={() => setShareConfig({ ...shareConfig, isOpen: false })} data={shareConfig.data} />
 
       {/* 1. 流动性监控 */}
@@ -674,7 +655,7 @@ const Dashboard: React.FC<{ onNavigate: (v: ViewType, ctx?: string) => void }> =
             <Wallet size={100} className="text-blue-500" />
         </div>
         <div className="flex items-center gap-2.5 mb-5 relative z-10">
-            <div className={`w-2.5 h-2.5 rounded-full animate-pulse glow-blue ${marketSentiment === 'positive' ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
+            <div className={`w-2.5 h-2.5 rounded-full glow-blue ${marketSentiment === 'positive' ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
             <span className="text-xs font-bold tracking-[0.2em] text-slate-500 dark:text-slate-400 uppercase">流动性实时监测</span>
         </div>
         <div className="flex items-end justify-between relative z-10">
@@ -852,5 +833,6 @@ const Dashboard: React.FC<{ onNavigate: (v: ViewType, ctx?: string) => void }> =
 };
 
 export default Dashboard;
+
 
 
