@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Brain, Database, ChevronDown, ChevronRight, Globe, Mic, MicOff, Square } from 'lucide-react';
+import { Send, Brain, Database, ChevronDown, ChevronRight, ChevronUp, Globe, Mic, MicOff, Square } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import OntologySphere from './OntologySphere';
@@ -30,6 +30,85 @@ interface Model {
   provider: string;
 }
 
+const AgentMessageContent = React.memo(({ content }: { content: string }) => {
+  const thinkStart = content.indexOf('<think>');
+  let thinkContent: string | null = null;
+  let mainContent = content;
+
+  if (thinkStart !== -1) {
+    const thinkEnd = content.indexOf('</think>');
+    if (thinkEnd !== -1) {
+      thinkContent = content.substring(thinkStart + 7, thinkEnd);
+      mainContent = content.substring(thinkEnd + 8);
+    } else {
+      thinkContent = content.substring(thinkStart + 7);
+      mainContent = '';
+    }
+  }
+
+  return (
+    <>
+      {thinkContent && <ThinkingProcess content={thinkContent} />}
+      {mainContent ? (
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            p: ({node, ...props}) => <p className="mb-2 last:mb-0" {...props} />,
+            ul: ({node, ...props}) => <ul className="list-disc list-inside mb-2" {...props} />,
+            ol: ({node, ...props}) => <ol className="list-decimal list-inside mb-2" {...props} />,
+            li: ({node, ...props}) => <li className="mb-1" {...props} />,
+            a: ({node, ...props}) => <a className="text-blue-500 hover:underline" {...props} />,
+            blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-slate-300 pl-4 italic my-2" {...props} />,
+            code: ({node, inline, className, children, ...props}: any) => {
+              const match = /language-(\w+)/.exec(className || '');
+              return !inline ? (
+                <div className="bg-slate-900 text-slate-100 rounded-md p-3 my-2 overflow-x-auto text-xs font-mono">
+                  <code className={className} {...props}>
+                    {children}
+                  </code>
+                </div>
+              ) : (
+                <code className="bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded text-xs font-mono" {...props}>
+                  {children}
+                </code>
+              )
+            }
+          }}
+        >
+          {mainContent}
+        </ReactMarkdown>
+      ) : (
+        !thinkContent && <span className="animate-pulse">Thinking...</span>
+      )}
+    </>
+  );
+});
+
+const MessageItem = React.memo(({ msg }: { msg: Message }) => {
+  return (
+    <div className={`flex flex-col mb-8 ${msg.type === 'user' ? 'items-end' : 'items-start'} animate-in slide-in-from-bottom-2 duration-500`}>
+      {msg.type === 'user' && (
+        <div className="max-w-[90%] px-4 py-3 bg-blue-600 text-white rounded-[1.4rem] rounded-tr-none text-[14px] shadow-lg shadow-blue-500/20 font-medium">
+          {msg.content}
+        </div>
+      )}
+
+      {msg.type === 'agent' && (
+        <div className="w-full space-y-4">
+          <div className="flex items-start gap-2.5">
+            <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center shrink-0 shadow-lg glow-blue mt-0">
+              <Brain size={14} className="text-white" />
+            </div>
+            <div className="flex-1 p-4 glass-card rounded-[1.4rem] rounded-tl-none text-[14px] leading-relaxed text-slate-800 dark:text-slate-200 relative group font-light shadow-sm">
+              <AgentMessageContent content={msg.content || ''} />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+});
+
 const ThinkingProcess = ({ content }: { content: string }) => {
   const [isExpanded, setIsExpanded] = useState(true);
 
@@ -53,7 +132,7 @@ const ThinkingProcess = ({ content }: { content: string }) => {
   );
 };
 
-const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () => void; isActive?: boolean }> = ({ initialContext, onClearContext, isActive = true }) => {
+const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () => void; isActive?: boolean; onChromeVisibilityChange?: (hidden: boolean) => void }> = ({ initialContext, onClearContext, isActive = true, onChromeVisibilityChange }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');    
   const [isThinking, setIsThinking] = useState(false); 
@@ -62,6 +141,7 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
   const [models, setModels] = useState<Model[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('Qwen/Qwen3.5-397B-A17B-FP8');
   const [sphereStatus, setSphereStatus] = useState<'idle' | 'thinking' | 'working'>('idle');
+  const [isComposerCollapsed, setIsComposerCollapsed] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null); 
   
   // ASR State
@@ -217,6 +297,10 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking]);
 
+  useEffect(() => {
+    onChromeVisibilityChange?.(isComposerCollapsed);
+  }, [isComposerCollapsed, onChromeVisibilityChange]);
+
   // Load models on mount
   useEffect(() => {
       const fetchModels = async () => {
@@ -327,27 +411,42 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let accumulatedContent = '';
+      let sseBuffer = '';
+      let lastFlushTs = 0;
+      const STREAM_FLUSH_INTERVAL = 33;
+
+      const flushAgentContent = () => {
+        setMessages(prev => prev.map(m =>
+          m.id === agentMsgId ? { ...m, content: accumulatedContent } : m
+        ));
+      };
 
       try {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          
-          const chunk = decoder.decode(value);
-          const lines = chunk.split('\n\n');
-          
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
+
+          sseBuffer += decoder.decode(value, { stream: true });
+          const events = sseBuffer.split('\n\n');
+          sseBuffer = events.pop() || '';
+
+          for (const event of events) {
+            const lines = event.split('\n');
+            for (const line of lines) {
+              if (!line.startsWith('data: ')) continue;
+
               const dataStr = line.replace('data: ', '').trim();
               if (dataStr === '[DONE]') break;
-              
+
               try {
                 const data = JSON.parse(dataStr);
                 if (data.content) {
                   accumulatedContent += data.content;
-                  setMessages(prev => prev.map(m => 
-                    m.id === agentMsgId ? { ...m, content: accumulatedContent } : m
-                  ));
+                  const now = performance.now();
+                  if (now - lastFlushTs >= STREAM_FLUSH_INTERVAL) {
+                    flushAgentContent();
+                    lastFlushTs = now;
+                  }
                 }
               } catch (e) {
                 console.error('Error parsing SSE chunk', e);
@@ -355,6 +454,24 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
             }
           }
         }
+
+        // 处理结尾残留分片
+        if (sseBuffer.trim().startsWith('data: ')) {
+          const dataStr = sseBuffer.trim().replace('data: ', '').trim();
+          if (dataStr && dataStr !== '[DONE]') {
+            try {
+              const data = JSON.parse(dataStr);
+              if (data.content) {
+                accumulatedContent += data.content;
+              }
+            } catch (e) {
+              console.error('Error parsing trailing SSE chunk', e);
+            }
+          }
+        }
+
+        // 确保最后一次内容落盘到UI
+        flushAgentContent();
       } catch (readError: any) {
         // 如果是用户主动中断，不视为错误
         if (readError.name === 'AbortError') {
@@ -421,87 +538,30 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
       </div>
 
       {/* 对话列表 */}  
-      <div className="flex-1 overflow-y-auto px-4 pt-6 pb-52 no-scrollbar">
+      <div className={`flex-1 overflow-y-auto px-4 pt-6 no-scrollbar transition-[padding] duration-500 ${isComposerCollapsed ? 'pb-28' : 'pb-72'}`}>
         {messages.map((msg) => (
-          <div key={msg.id} className={`flex flex-col mb-8 ${msg.type === 'user' ? 'items-end' : 'items-start'} animate-in slide-in-from-bottom-2 duration-500`}>    
-            {msg.type === 'user' && (
-              <div className="max-w-[90%] px-4 py-3 bg-blue-600 text-white rounded-[1.4rem] rounded-tr-none text-[14px] shadow-lg shadow-blue-500/20 font-medium">   
-                {msg.content}
-              </div>
-            )}
-
-            {msg.type === 'agent' && (
-              <div className="w-full space-y-4">       
-                <div className="flex items-start gap-2.5">
-                  <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center shrink-0 shadow-lg glow-blue mt-0">
-                    <Brain size={14} className="text-white" />
-                  </div>
-                  <div className="flex-1 p-4 glass-card rounded-[1.4rem] rounded-tl-none text-[14px] leading-relaxed text-slate-800 dark:text-slate-200 relative group font-light shadow-sm">
-                    {(() => {
-                        const content = msg.content || '';
-                        const thinkStart = content.indexOf('<think>');
-                        let thinkContent = null;
-                        let mainContent = content;
-
-                        if (thinkStart !== -1) {
-                            const thinkEnd = content.indexOf('</think>');
-                            if (thinkEnd !== -1) {
-                                thinkContent = content.substring(thinkStart + 7, thinkEnd);
-                                mainContent = content.substring(thinkEnd + 8);
-                            } else {
-                                thinkContent = content.substring(thinkStart + 7);
-                                mainContent = ''; 
-                            }
-                        }
-
-                        return (
-                           <>
-                                {thinkContent && <ThinkingProcess content={thinkContent} />}
-                                {mainContent ? (
-                                    <ReactMarkdown 
-                                        remarkPlugins={[remarkGfm]}
-                                        components={{
-                                            p: ({node, ...props}) => <p className="mb-2 last:mb-0" {...props} />,
-                                            ul: ({node, ...props}) => <ul className="list-disc list-inside mb-2" {...props} />,
-                                            ol: ({node, ...props}) => <ol className="list-decimal list-inside mb-2" {...props} />,
-                                            li: ({node, ...props}) => <li className="mb-1" {...props} />,
-                                            a: ({node, ...props}) => <a className="text-blue-500 hover:underline" {...props} />,
-                                            blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-slate-300 pl-4 italic my-2" {...props} />,
-                                            code: ({node, inline, className, children, ...props}: any) => {
-                                                const match = /language-(\w+)/.exec(className || '');
-                                                return !inline ? (
-                                                    <div className="bg-slate-900 text-slate-100 rounded-md p-3 my-2 overflow-x-auto text-xs font-mono">
-                                                        <code className={className} {...props}>
-                                                            {children}
-                                                        </code>
-                                                    </div>
-                                                ) : (
-                                                    <code className="bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded text-xs font-mono" {...props}>
-                                                        {children}
-                                                    </code>
-                                                )
-                                            }
-                                        }}
-                                    >
-                                        {mainContent}
-                                    </ReactMarkdown>
-                                ) : (
-                                    !thinkContent && <span className="animate-pulse">Thinking...</span>
-                                )}
-                           </>
-                        );
-                    })()}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          <MessageItem key={msg.id} msg={msg} />
         ))}
         <div ref={messagesEndRef} />
       </div>
 
+      {/* 输入面板折叠按钮 */}
+      <div className={`fixed right-5 z-50 transition-all duration-500 ${isComposerCollapsed ? 'bottom-[132px]' : 'bottom-[272px]'}`}>
+        <button
+          onClick={() => setIsComposerCollapsed(prev => !prev)}
+          className="group flex items-center gap-2 rounded-full border border-blue-200/70 dark:border-white/10 bg-white/90 dark:bg-slate-950/85 px-4 py-2 text-[12px] font-semibold text-slate-700 dark:text-slate-200 shadow-[0_12px_40px_rgba(37,99,235,0.16)] backdrop-blur-xl transition-all hover:-translate-y-0.5 hover:bg-white dark:hover:bg-slate-900"
+          title={isComposerCollapsed ? '展开输入区' : '收起输入区'}
+          type="button"
+        >
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-cyan-400 text-white shadow-lg shadow-blue-500/30 transition-transform group-hover:scale-105">
+            {isComposerCollapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </span>
+          <span>{isComposerCollapsed ? '展开输入区' : '收起输入区'}</span>
+        </button>
+      </div>
+
       {/* 底部输入框 */}
-      <div className="fixed bottom-[116px] left-0 right-0 px-5 z-40 pb-safe transition-all duration-500">     
+      <div className={`fixed bottom-[116px] left-0 right-0 px-5 z-40 pb-safe transition-all duration-500 ${isComposerCollapsed ? 'translate-y-[140%] opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}>     
         <div className="max-w-2xl mx-auto relative group">
             <div className="absolute inset-0 bg-blue-600/5 dark:bg-blue-900/10 blur-[30px] rounded-[2rem] -z-10 group-focus-within:bg-blue-600/10 dark:group-focus-within:bg-blue-800/20 transition-all"></div>
             <div className="relative glass-card bg-white/95 dark:bg-black/90 rounded-[2rem] border-slate-200 dark:border-white/10 p-4 shadow-2xl flex flex-col gap-3">

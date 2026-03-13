@@ -16,6 +16,7 @@ const App: React.FC = () => {
   const [showDevMode, setShowDevMode] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isPageVisible, setIsPageVisible] = useState(!document.hidden);
+  const [isChatChromeHidden, setIsChatChromeHidden] = useState(false);
 
   // 页面可见性检测：页面最小化/切标签页时暂停所有动画和轮询，降低 GPU 占用
   useEffect(() => {
@@ -39,6 +40,9 @@ const App: React.FC = () => {
   const handleNavigate = (view: ViewType, context?: string) => {
     if (context) {
       setChatContext(context);
+    }
+    if (view !== ViewType.CHAT) {
+      setIsChatChromeHidden(false);
     }
     setActiveView(view);
   };
@@ -94,6 +98,7 @@ const App: React.FC = () => {
             initialContext={chatContext} 
             onClearContext={() => setChatContext(null)}
             isActive={activeView === ViewType.CHAT && isPageVisible}
+            onChromeVisibilityChange={setIsChatChromeHidden}
           />
         </div>
 
@@ -108,7 +113,7 @@ const App: React.FC = () => {
       {showDevMode && <ArchitectureCanvas onClose={() => setShowDevMode(false)} />}
 
       {/* 底部导航 */}
-      <MobileNav activeView={activeView} setActiveView={handleNavigate} />
+      <MobileNav activeView={activeView} setActiveView={handleNavigate} hidden={activeView === ViewType.CHAT && isChatChromeHidden} />
     </div>
   );
 };

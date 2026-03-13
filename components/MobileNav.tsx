@@ -7,9 +7,10 @@ import { TODOS_DATA } from '../constants';
 interface MobileNavProps {
   activeView: ViewType;
   setActiveView: (view: ViewType) => void;
+  hidden?: boolean;
 }
 
-const MobileNav: React.FC<MobileNavProps> = ({ activeView, setActiveView }) => {
+const MobileNav: React.FC<MobileNavProps> = ({ activeView, setActiveView, hidden = false }) => {
   const pendingCount = TODOS_DATA.filter(t => t.status === 'pending').length;
 
   const mobileTabs = [
@@ -20,7 +21,7 @@ const MobileNav: React.FC<MobileNavProps> = ({ activeView, setActiveView }) => {
   ];
 
   return (
-    <div className="fixed bottom-8 left-6 right-6 z-[100] animate-in slide-in-from-bottom-10 duration-700">
+    <div className={`fixed bottom-8 left-6 right-6 z-[100] animate-in slide-in-from-bottom-10 duration-700 transition-all ${hidden ? 'translate-y-24 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}>
       <div className="glass-card rounded-[2.2rem] px-3 py-3 border-slate-200/60 dark:border-white/10 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.1)] dark:shadow-[0_20px_50px_-12px_rgba(0,0,0,0.5)] flex items-center justify-between bg-white/90 dark:bg-black/80 transition-all">
         {mobileTabs.map((tab) => {
           const isActive = activeView === tab.id;

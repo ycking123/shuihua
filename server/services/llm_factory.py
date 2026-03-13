@@ -83,28 +83,89 @@ class MiniMaxProvider(LLMProvider):
             api_key=api_key,
             base_url="https://api.shuihua.ai/v1"
         )
-        self.model_name = "MiniMaxAI/MiniMax-M2.5"
+        self.models = ["MiniMaxAI/MiniMax-M2.5", "MiniMaxAI/MiniMax-M2.5-fast"]
 
     def list_models(self) -> List[str]:
-        return [self.model_name]
+        return self.models
 
     def chat_stream(self, model: str, messages: List[dict], system_instruction: str = None) -> Generator[Any, None, None]:
+        is_fast = "fast" in model
+        if is_fast:
+            fast_prompt = "【极速模式指令】请直接输出最终回答，严禁进行内部推演或输出思考过程，绝不允许使用<think>标签。"
+            if system_instruction:
+                system_instruction = f"{fast_prompt}\n{system_instruction}"
+            else:
+                system_instruction = fast_prompt
+
         final_messages = []
         if system_instruction:
             final_messages.append({"role": "system", "content": system_instruction})
         
         final_messages.extend(messages)
 
-        response = self.client.chat.completions.create(
-            model=model,
-            messages=final_messages,
-            stream=True,
-            max_tokens=2048,
-        )
+        actual_model = "MiniMaxAI/MiniMax-M2.5"
+        
+        kwargs = {
+            "model": actual_model,
+            "messages": final_messages,
+            "stream": True,
+            "max_tokens": 2048,
+        }
+        
+        if is_fast:
+            # 暴力尝试关闭目前主流兼容接口的所有思考参数
+            kwargs["extra_body"] = {
+                "include_reasoning": False,
+                "reasoning_effort": "low",
+                "thinking": False,
+                "with_reasoning": False
+            }
+
+        response = self.client.chat.completions.create(**kwargs)
+        
+        in_think_block = False
+        think_buffer = ""
         
         for chunk in response:
             if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
+                content = chunk.choices[0].delta.content
+                
+                # 如果是极速模式，在此处强行拦截并丢弃 <think> 过程
+                if is_fast:
+                    think_buffer += content
+                    # 动态检测是否含有 think 标签
+                    if not in_think_block:
+                        if "<think>" in think_buffer:
+                            # 刚进入 think 块，把 <think> 之前的内容放行
+                            parts = think_buffer.split("<think>")
+                            if parts[0]:
+                                yield parts[0]
+                            in_think_block = True
+                            # 保留 <think> 之后的内容等待 </think>
+                            think_buffer = parts[1] if len(parts) > 1 else ""
+                        else:
+                            # 没有进入 think 块，安全放行（保留不到7个可能形成<think>的尾部字符防止截断）
+                            if len(think_buffer) > 7:
+                                safe_str = think_buffer[:-7]
+                                think_buffer = think_buffer[-7:]
+                                yield safe_str
+                    else:
+                        # 正在 think 块中，等待退出标签
+                        if "</think>" in think_buffer:
+                            parts = think_buffer.split("</think>")
+                            in_think_block = False
+                            think_buffer = parts[1] if len(parts) > 1 else ""
+                            # 退出后如果有残留也先不释放，等下一次循环
+                            
+                else:
+                    yield content
+                    
+        # 兜底释放
+        if is_fast and not in_think_block and think_buffer:
+            # 防止最后带有半拉子标签
+            if "<think" not in think_buffer:
+                yield think_buffer
+
 
 class LLMFactory:
     _providers = {}
