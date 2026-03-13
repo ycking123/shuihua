@@ -1,7 +1,7 @@
 
 import React from 'react';
-import { LayoutDashboard, MessageSquare, CheckSquare, Bell, User } from 'lucide-react';
-import { TodoItem, ViewType } from './types';
+import { CalendarDays, CalendarPlus2, DoorOpen, FileAudio2, LayoutDashboard, MessageSquare, CheckSquare, Bell, User } from 'lucide-react';
+import { MeetingTabType, TodoItem, ViewType } from './types';
 
 // 扩展 TodoItem 类型 definition 以支持会议
 export interface ExtendedTodoItem extends TodoItem {
@@ -11,10 +11,18 @@ export interface ExtendedTodoItem extends TodoItem {
 }
 
 export const MENU_ITEMS = [
+  { id: ViewType.MEETING, icon: CalendarDays, label: '会议中心' },
   { id: ViewType.DASHBOARD, icon: LayoutDashboard, label: '驾驶舱' },
   { id: ViewType.CHAT, icon: MessageSquare, label: 'AI智僚' },
   { id: ViewType.TODO, icon: CheckSquare, label: '待办事项' },
   { id: ViewType.SETTINGS, icon: User, label: '个人' },
+];
+
+export const MEETING_TABS: { id: MeetingTabType; icon: React.ComponentType<any>; label: string }[] = [
+  { id: 'overview', icon: CalendarDays, label: '会议总览' },
+  { id: 'booking', icon: CalendarPlus2, label: '预约会议' },
+  { id: 'rooms', icon: DoorOpen, label: '会议室' },
+  { id: 'minutes', icon: FileAudio2, label: '听记纪要' },
 ];
 
 export const TODOS_DATA: (ExtendedTodoItem | any)[] = [

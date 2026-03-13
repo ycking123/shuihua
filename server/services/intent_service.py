@@ -1,442 +1,300 @@
-"""
-意图识别与参数提取服务
-使用LLM进行智能意图识别和参数提取
-支持多轮对话参数收集
-"""
-
 import json
 import re
-from typing import Dict, List, Optional, Any
-from datetime import datetime
+from typing import Any, Dict, List, Optional
+
 from ..services.llm_factory import LLMFactory
+from ..services.session_state_manager import PARAM_NAMES_CN
 
 
-# 意图定义
 INTENTS = {
-    "meeting": "创建会议",
+    "meeting_create": "创建会议",
+    "meeting_update": "修改会议",
+    "meeting_cancel": "取消会议",
+    "room_query": "查询会议室",
+    "room_book": "预约会议室",
+    "meeting_query": "查询会议",
+    "minutes_import": "导入会议链接",
+    "minutes_record": "录音转写纪要",
     "group": "创建群聊",
     "todo": "创建待办",
-    "chat": "普通聊天"
-}
-
-# 各意图的必填参数
-REQUIRED_PARAMS = {
-    "meeting": ["title", "start_time", "participants"],
-    "group": ["group_name", "members"],
-    "todo": ["title", "owner"]
-}
-
-# 参数中文名称映射
-PARAM_NAMES_CN = {
-    "title": "会议主题",
-    "start_time": "会议时间",
-    "end_time": "结束时间",
-    "participants": "参会人员",
-    "location": "会议地点",
-    "group_name": "群聊名称",
-    "members": "群成员",
-    "owner": "负责人",
-    "priority": "优先级",
-    "description": "描述"
+    "chat": "普通聊天",
 }
 
 
 class IntentService:
-    """意图识别服务"""
-    
-    def __init__(self):
+    """意图识别与参数抽取服务。"""
+
+    def __init__(self) -> None:
         self.provider = LLMFactory.get_provider("MiniMaxAI/MiniMax-M2.5")
         self.model_name = "MiniMaxAI/MiniMax-M2.5"
-    
+
     def detect_intent(self, user_input: str, context_messages: List[Dict] = None) -> Dict[str, Any]:
-        """
-        检测用户意图
-        返回: {"intent": "meeting/group/todo/chat", "confidence": float}
-        """
+        heuristic = self._heuristic_detect_intent(user_input)
+        if heuristic["intent"] != "chat":
+            return heuristic
+
         system_prompt = """
-你是一个智能意图识别助手。请分析用户的输入，判断用户的意图。
+你是会议助手的意图识别器，只能输出 JSON。
 
 可选意图：
-1. meeting - 创建会议（关键词：开会、会议、讨论、约个会、schedule meeting）
-2. group - 创建群聊（关键词：建群、拉群、群聊、创建群组、create group）
-3. todo - 创建待办（关键词：待办、任务、提醒、要做、todo、task、remind）
-4. chat - 普通聊天（以上都不是）
+- meeting_create
+- meeting_update
+- meeting_cancel
+- room_query
+- room_book
+- meeting_query
+- minutes_import
+- minutes_record
+- group
+- todo
+- chat
 
-请只返回JSON格式：
-{"intent": "meeting/group/todo/chat", "confidence": 0-1之间的数值}
-
-注意：
-- 如果用户说"帮我创建会议"、"开个会"等，意图是 meeting
-- 如果用户说"拉个群"、"建个群聊"等，意图是 group
-- 如果用户说"添加待办"、"提醒我"等，意图是 todo
-- 其他情况意图是 chat
+规则：
+1. 只有当用户明确表达会议、会议室、纪要、录音、群聊、待办诉求时，才能返回对应意图。
+2. 会议相关若置信度低于 0.6，一律返回 chat。
+3. 只输出形如 {"intent":"...", "confidence":0.0} 的 JSON。
 """
-        
         messages = [{"role": "system", "content": system_prompt}]
-        
-        # 添加上下文
         if context_messages:
-            for msg in context_messages[-3:]:  # 最近3条
-                messages.append({"role": msg.get("role", "user"), "content": msg.get("content", "")})
-        
+            for item in context_messages[-3:]:
+                messages.append({"role": item.get("role", "user"), "content": item.get("content", "")})
         messages.append({"role": "user", "content": user_input})
-        
+
         try:
-            response = self.provider.chat_stream(
-                model=self.model_name,
-                messages=messages
-            )
-            
-            # 收集流式响应
-            result = ""
-            for chunk in response:
-                result += chunk
-            
-            # 解析JSON
-            match = re.search(r'\{.*\}', result, re.DOTALL)
-            if match:
-                intent_data = json.loads(match.group())
-                return intent_data
-            
-            # 默认返回chat
+            response = self.provider.chat_stream(model=self.model_name, messages=messages)
+            content = "".join(chunk for chunk in response)
+            match = re.search(r"\{.*\}", content, re.DOTALL)
+            if not match:
+                return {"intent": "chat", "confidence": 1.0}
+            data = json.loads(match.group())
+            intent = data.get("intent", "chat")
+            confidence = float(data.get("confidence", 0))
+            if confidence < 0.6:
+                return {"intent": "chat", "confidence": confidence}
+            if intent not in INTENTS:
+                return {"intent": "chat", "confidence": 1.0}
+            return {"intent": intent, "confidence": confidence}
+        except Exception:
             return {"intent": "chat", "confidence": 1.0}
-            
-        except Exception as e:
-            print(f"❌ 意图识别失败: {e}")
-            return {"intent": "chat", "confidence": 1.0}
-    
-    def extract_params_with_llm(self, user_input: str, intent: str, 
-                                 existing_params: Dict = None,
-                                 context_messages: List[Dict] = None) -> Dict[str, Any]:
-        """
-        使用LLM从用户输入中提取参数
-        """
-        if intent == "meeting":
-            return self._extract_meeting_params(user_input, existing_params, context_messages)
-        elif intent == "group":
-            return self._extract_group_params(user_input, existing_params, context_messages)
-        elif intent == "todo":
-            return self._extract_todo_params(user_input, existing_params, context_messages)
-        else:
+
+    def extract_params_with_llm(
+        self,
+        user_input: str,
+        intent: str,
+        existing_params: Dict = None,
+        context_messages: List[Dict] = None,
+    ) -> Dict[str, Any]:
+        params = self._heuristic_extract(user_input, intent)
+        if params:
+            return params
+
+        if intent not in INTENTS or intent == "chat":
             return {}
-    
-    def _extract_meeting_params(self, user_input: str, existing_params: Dict = None,
-                                 context_messages: List[Dict] = None) -> Dict[str, Any]:
-        """提取会议参数"""
-        
-        system_prompt = """
-你是一个智能参数提取助手。请从用户输入中提取会议相关信息。
 
-需要提取的字段：
-- title: 会议主题/标题（必填）
-- start_time: 会议时间（必填，如：明天下午3点、2024-01-15 14:00）
-- end_time: 结束时间（可选）
-- participants: 参会人员列表（必填，如：["张三", "李四"]）
-- location: 会议地点（可选）
-- description: 会议描述（可选）
+        system_prompt = f"""
+你是会议助手的参数抽取器，只能输出 JSON。
+当前意图：{intent}
 
-请只返回JSON格式，不要有多余文字：
-{
-    "title": "会议主题",
-    "start_time": "时间描述",
-    "end_time": "结束时间",
-    "participants": ["人员1", "人员2"],
-    "location": "地点",
-    "description": "描述"
-}
+会议相关参数 schema：
+- title
+- start_time
+- end_time
+- duration
+- participants
+- room_id
+- room_name
+- site_name
+- location
+- description
+- meeting_url
+- transcript
+- status
 
-注意：
-1. 如果某个字段没有提到，不要猜测，设为null或空数组
-2. 时间保持用户原始描述，不要转换
-3. 人员要提取具体姓名，用逗号、空格或"和"分隔的都分开
-4. 如果用户说"我"，保留"我"这个字
+要求：
+1. 只提取用户明确说出的信息，不允许猜测。
+2. 时间保持用户原始表达，不要自行换算。
+3. 只输出 JSON；缺失字段不要输出。
 """
-        
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        context_str = ""
-        if context_messages:
-            for msg in context_messages[-5:]:
-                role = "用户" if msg.get("role") == "user" else "助手"
-                context_str += f"{role}: {msg.get('content', '')}\n"
-        
-        existing_str = ""
+        messages = [{"role": "system", "content": system_prompt}]
         if existing_params:
-            existing_str = f"\n已收集的参数：{json.dumps(existing_params, ensure_ascii=False)}"
-        
-        messages = [
-            {"role": "system", "content": f"{system_prompt}\n\n当前时间：{current_time}{existing_str}"}
-        ]
-        
-        if context_str:
-            messages.append({"role": "system", "content": f"对话上下文：\n{context_str}"})
-        
-        messages.append({"role": "user", "content": user_input})
-        
-        try:
-            response = self.provider.chat_stream(
-                model=self.model_name,
-                messages=messages
+            messages.append(
+                {
+                    "role": "system",
+                    "content": f"已收集参数：{json.dumps(existing_params, ensure_ascii=False)}",
+                }
             )
-            
-            result = ""
-            for chunk in response:
-                result += chunk
-            
-            # 清理和解析JSON
-            result = self._clean_json_response(result)
-            match = re.search(r'\{.*\}', result, re.DOTALL)
-            
-            if match:
-                params = json.loads(match.group())
-                # 过滤掉null值
-                return {k: v for k, v in params.items() if v is not None and v != [] and v != ""}
-            
-            return {}
-            
-        except Exception as e:
-            print(f"❌ 会议参数提取失败: {e}")
-            return {}
-    
-    def _extract_group_params(self, user_input: str, existing_params: Dict = None,
-                               context_messages: List[Dict] = None) -> Dict[str, Any]:
-        """提取群聊参数"""
-        
-        system_prompt = """
-你是一个智能参数提取助手。请从用户输入中提取群聊相关信息。
-
-需要提取的字段：
-- group_name: 群聊名称（必填）
-- members: 群成员列表（必填，如：["张三", "李四"]）
-- description: 群描述（可选）
-
-请只返回JSON格式，不要有多余文字：
-{
-    "group_name": "群聊名称",
-    "members": ["成员1", "成员2"],
-    "description": "描述"
-}
-
-注意：
-1. 如果某个字段没有提到，不要猜测，设为null或空数组
-2. 人员要提取具体姓名，用逗号、空格或"和"分隔的都分开
-3. 如果用户说"我"，保留"我"这个字
-"""
-        
-        context_str = ""
         if context_messages:
-            for msg in context_messages[-5:]:
-                role = "用户" if msg.get("role") == "user" else "助手"
-                context_str += f"{role}: {msg.get('content', '')}\n"
-        
-        existing_str = ""
-        if existing_params:
-            existing_str = f"\n已收集的参数：{json.dumps(existing_params, ensure_ascii=False)}"
-        
-        messages = [
-            {"role": "system", "content": f"{system_prompt}{existing_str}"}
-        ]
-        
-        if context_str:
-            messages.append({"role": "system", "content": f"对话上下文：\n{context_str}"})
-        
-        messages.append({"role": "user", "content": user_input})
-        
-        try:
-            response = self.provider.chat_stream(
-                model=self.model_name,
-                messages=messages
+            context_text = "\n".join(
+                [f"{item.get('role', 'user')}: {item.get('content', '')}" for item in context_messages[-5:]]
             )
-            
-            result = ""
-            for chunk in response:
-                result += chunk
-            
-            result = self._clean_json_response(result)
-            match = re.search(r'\{.*\}', result, re.DOTALL)
-            
-            if match:
-                params = json.loads(match.group())
-                return {k: v for k, v in params.items() if v is not None and v != [] and v != ""}
-            
-            return {}
-            
-        except Exception as e:
-            print(f"❌ 群聊参数提取失败: {e}")
-            return {}
-    
-    def _extract_todo_params(self, user_input: str, existing_params: Dict = None,
-                              context_messages: List[Dict] = None) -> Dict[str, Any]:
-        """提取待办参数"""
-        
-        system_prompt = """
-你是一个智能参数提取助手。请从用户输入中提取待办事项相关信息。
-
-需要提取的字段：
-- title: 待办标题（必填）
-- owner: 负责人（必填，如：我、张三、李四）
-- due_date: 截止日期（可选，如：明天、本周五、2024-01-15）
-- priority: 优先级（可选：紧急、高、中、低）
-- description: 描述（可选）
-
-请只返回JSON格式，不要有多余文字：
-{
-    "title": "待办标题",
-    "owner": "负责人",
-    "due_date": "截止日期",
-    "priority": "优先级",
-    "description": "描述"
-}
-
-注意：
-1. 如果某个字段没有提到，不要猜测，设为null
-2. 时间保持用户原始描述，不要转换
-3. 如果用户说"我"，保留"我"这个字
-4. 优先级映射：紧急/urgent -> 紧急，高/high/重要 -> 高，中/medium/普通 -> 中，低/low -> 低
-"""
-        
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        context_str = ""
-        if context_messages:
-            for msg in context_messages[-5:]:
-                role = "用户" if msg.get("role") == "user" else "助手"
-                context_str += f"{role}: {msg.get('content', '')}\n"
-        
-        existing_str = ""
-        if existing_params:
-            existing_str = f"\n已收集的参数：{json.dumps(existing_params, ensure_ascii=False)}"
-        
-        messages = [
-            {"role": "system", "content": f"{system_prompt}\n\n当前时间：{current_time}{existing_str}"}
-        ]
-        
-        if context_str:
-            messages.append({"role": "system", "content": f"对话上下文：\n{context_str}"})
-        
+            messages.append({"role": "system", "content": f"对话上下文：\n{context_text}"})
         messages.append({"role": "user", "content": user_input})
-        
+
         try:
-            response = self.provider.chat_stream(
-                model=self.model_name,
-                messages=messages
-            )
-            
-            result = ""
-            for chunk in response:
-                result += chunk
-            
-            result = self._clean_json_response(result)
-            match = re.search(r'\{.*\}', result, re.DOTALL)
-            
-            if match:
-                params = json.loads(match.group())
-                return {k: v for k, v in params.items() if v is not None and v != ""}
-            
+            response = self.provider.chat_stream(model=self.model_name, messages=messages)
+            content = "".join(chunk for chunk in response)
+            match = re.search(r"\{.*\}", content, re.DOTALL)
+            if not match:
+                return {}
+            data = json.loads(match.group())
+            return {k: v for k, v in data.items() if v not in [None, "", []]}
+        except Exception:
             return {}
-            
-        except Exception as e:
-            print(f"❌ 待办参数提取失败: {e}")
-            return {}
-    
-    def _clean_json_response(self, response: str) -> str:
-        """清理LLM返回的JSON响应"""
-        # 移除markdown代码块标记
-        if response.startswith("```json"):
-            response = response[7:]
-        if response.startswith("```"):
-            response = response[3:]
-        if response.endswith("```"):
-            response = response[:-3]
-        return response.strip()
-    
-    def generate_clarification_question(self, missing_params: List[str], 
-                                         collected_params: Dict,
-                                         intent: str) -> str:
-        """生成追问问题"""
-        missing_names = [PARAM_NAMES_CN.get(p, p) for p in missing_params]
-        
-        # 先显示已收集的信息
-        question_parts = []
-        
-        if intent == "meeting":
-            if collected_params.get("title"):
-                question_parts.append(f"会议主题：{collected_params['title']}")
-            if collected_params.get("start_time"):
-                question_parts.append(f"时间：{collected_params['start_time']}")
-            if collected_params.get("participants"):
-                participants = collected_params["participants"]
-                if isinstance(participants, list):
-                    question_parts.append(f"参会人：{'、'.join(participants)}")
+
+    def generate_clarification_question(
+        self,
+        missing_params: List[str],
+        collected_params: Dict,
+        intent: str,
+    ) -> str:
+        collected_lines = []
+        for key in ["title", "start_time", "room_name", "location", "meeting_url"]:
+            value = collected_params.get(key)
+            if value:
+                label = PARAM_NAMES_CN.get(key, key)
+                if isinstance(value, list):
+                    collected_lines.append(f"{label}：{', '.join(value)}")
                 else:
-                    question_parts.append(f"参会人：{participants}")
-        
-        elif intent == "group":
-            if collected_params.get("group_name"):
-                question_parts.append(f"群聊名称：{collected_params['group_name']}")
-            if collected_params.get("members"):
-                members = collected_params["members"]
-                if isinstance(members, list):
-                    question_parts.append(f"成员：{'、'.join(members)}")
-                else:
-                    question_parts.append(f"成员：{members}")
-        
-        elif intent == "todo":
-            if collected_params.get("title"):
-                question_parts.append(f"待办：{collected_params['title']}")
-            if collected_params.get("owner"):
-                question_parts.append(f"负责人：{collected_params['owner']}")
-        
-        # 构建问题
-        if question_parts:
-            question = "已记录信息：\n" + "\n".join([f"• {p}" for p in question_parts])
-            question += f"\n\n还缺少：{', '.join(missing_names)}\n请补充。"
-        else:
-            question = f"请提供以下信息：{', '.join(missing_names)}"
-        
-        return question
-    
+                    collected_lines.append(f"{label}：{value}")
+
+        missing_names = [PARAM_NAMES_CN.get(item, item) for item in missing_params]
+        if collected_lines:
+            return "已记录信息：\n" + "\n".join(collected_lines) + f"\n\n还缺少：{'、'.join(missing_names)}。请继续补充。"
+        return f"请补充以下信息：{'、'.join(missing_names)}。"
+
     def generate_confirmation_prompt(self, intent: str, params: Dict) -> str:
-        """生成确认提示"""
-        if intent == "meeting":
-            prompt = "请确认以下会议信息：\n"
-            prompt += f"📅 主题：{params.get('title')}\n"
-            prompt += f"⏰ 时间：{params.get('start_time')}\n"
-            participants = params.get('participants', [])
-            if isinstance(participants, list):
-                prompt += f"👥 参会人：{'、'.join(participants)}\n"
-            else:
-                prompt += f"👥 参会人：{participants}\n"
-            if params.get('location'):
-                prompt += f"📍 地点：{params['location']}\n"
-            prompt += '\n是否创建会议？（确认请回复"是"或"确认"）'
-        
-        elif intent == "group":
-            prompt = "请确认以下群聊信息：\n"
-            prompt += f"💬 群聊名称：{params.get('group_name')}\n"
-            members = params.get('members', [])
-            if isinstance(members, list):
-                prompt += f"👥 成员：{'、'.join(members)}\n"
-            else:
-                prompt += f"👥 成员：{members}\n"
-            prompt += '\n是否创建群聊？（确认请回复"是"或"确认"）'
-        
-        elif intent == "todo":
-            prompt = "请确认以下待办信息：\n"
-            prompt += f"📝 待办：{params.get('title')}\n"
-            prompt += f"👤 负责人：{params.get('owner')}\n"
-            if params.get('due_date'):
-                prompt += f"📅 截止日期：{params['due_date']}\n"
-            if params.get('priority'):
-                prompt += f"⚡ 优先级：{params['priority']}\n"
-            prompt += '\n是否创建待办？（确认请回复"是"或"确认"）'
-        
-        else:
-            prompt = "参数已收集完整，是否执行？"
-        
-        return prompt
+        if intent in {"meeting_create", "room_book"}:
+            lines = [
+                "请确认以下会议信息：",
+                f"主题：{params.get('title')}",
+                f"开始时间：{params.get('start_time')}",
+            ]
+            if params.get("end_time"):
+                lines.append(f"结束时间：{params.get('end_time')}")
+            elif params.get("duration"):
+                lines.append(f"时长：{params.get('duration')}")
+            if params.get("room_name"):
+                lines.append(f"会议室：{params.get('room_name')}")
+            elif params.get("location"):
+                lines.append(f"地点：{params.get('location')}")
+            if params.get("participants"):
+                participants = params.get("participants")
+                if isinstance(participants, list):
+                    lines.append(f"参会人：{', '.join(participants)}")
+                else:
+                    lines.append(f"参会人：{participants}")
+            lines.append("确认执行请回复“确认”。")
+            return "\n".join(lines)
+
+        if intent == "meeting_update":
+            return f"将更新会议《{params.get('title', '未命名会议')}》，确认执行请回复“确认”。"
+        if intent == "meeting_cancel":
+            return f"将取消会议《{params.get('title', '未命名会议')}》，确认执行请回复“确认”。"
+        if intent == "minutes_import":
+            return f"将导入会议链接：{params.get('meeting_url')}，确认执行请回复“确认”。"
+        if intent == "minutes_record":
+            return "将保存录音纪要并生成摘要，确认执行请回复“确认”。"
+        if intent == "group":
+            return f"将创建群聊《{params.get('group_name', '未命名群聊')}》，确认执行请回复“确认”。"
+        if intent == "todo":
+            return f"将创建待办《{params.get('title', '未命名待办')}》，确认执行请回复“确认”。"
+        return "参数已收集完成，确认执行请回复“确认”。"
+
+    def _heuristic_detect_intent(self, user_input: str) -> Dict[str, Any]:
+        text = user_input.strip()
+
+        rules = [
+            ("minutes_import", [r"https?://", r"导入.*会议链接", r"纪要链接"]),
+            ("minutes_record", [r"录音", r"转写", r"纪要"]),
+            ("meeting_cancel", [r"取消.*会议", r"取消.*会", r"删掉.*会议"]),
+            ("meeting_update", [r"修改.*会议", r"调整.*会议", r"改到.*会议", r"延期.*会议"]),
+            ("room_book", [r"预约.*会议室", r"预定.*会议室", r"订.*会议室", r"定个.*会议室"]),
+            ("room_query", [r"会议室", r"空闲.*会议室", r"有哪些会议室", r"会议室占用"]),
+            ("meeting_query", [r"我的会议", r"有哪些会议", r"查.*会议", r"会议列表"]),
+            ("meeting_create", [r"创建.*会议", r"安排.*会议", r"开个会", r"约个会", r"组织.*会议"]),
+            ("group", [r"建群", r"群聊", r"拉个群"]),
+            ("todo", [r"待办", r"任务", r"提醒我", r"帮我记一下"]),
+        ]
+
+        for intent, patterns in rules:
+            if any(re.search(pattern, text, re.IGNORECASE) for pattern in patterns):
+                return {"intent": intent, "confidence": 0.9}
+        return {"intent": "chat", "confidence": 1.0}
+
+    def _heuristic_extract(self, user_input: str, intent: str) -> Dict[str, Any]:
+        if intent == "chat":
+            return {}
+
+        params: Dict[str, Any] = {}
+        url_match = re.search(r"https?://\S+", user_input)
+        if url_match:
+            params["meeting_url"] = url_match.group()
+
+        time_match = re.search(
+            r"((今天|明天|后天)?(上午|下午|晚上|中午)?\s*\d{1,2}(?::\d{1,2}|点半|点)?|"
+            r"\d{4}[-/年]\d{1,2}[-/月]\d{1,2}(日)?\s*\d{0,2}:?\d{0,2})",
+            user_input,
+        )
+        if time_match:
+            params["start_time"] = time_match.group(1).strip()
+
+        end_match = re.search(r"到\s*((上午|下午|晚上|中午)?\s*\d{1,2}(?::\d{1,2}|点半|点)?)", user_input)
+        if end_match:
+            params["end_time"] = end_match.group(1).strip()
+
+        duration_match = re.search(r"(\d+\s*(分钟|分|min|小时|hour))", user_input, re.IGNORECASE)
+        if duration_match:
+            params["duration"] = duration_match.group(1).strip()
+
+        room_match = re.search(r"([^\s，。；,;]{1,30}会议室)", user_input)
+        if room_match:
+            params["room_name"] = room_match.group(1).strip()
+            if intent not in {"room_book", "room_query"}:
+                params.setdefault("location", room_match.group(1).strip())
+
+        online_match = re.search(r"(线上会议|线上|腾讯会议|视频会议)", user_input)
+        if online_match and "location" not in params:
+            params["location"] = online_match.group(1)
+
+        title_patterns = [
+            r"主题[是为:：]\s*([^\n，。；,;]+)",
+            r"关于([^\n，。；,;]+)的会议",
+            r"(?:安排|创建|组织|开|约|取消|修改)([^\n，。；,;]{2,30})会议",
+        ]
+        for pattern in title_patterns:
+            match = re.search(pattern, user_input)
+            if match:
+                params["title"] = match.group(1).strip()
+                break
+
+        participants_match = re.search(r"(参会人|参与人|叫上|和|与)(.+)", user_input)
+        if participants_match:
+            tail = participants_match.group(2)
+            names = [item.strip() for item in re.split(r"[、,，和及\-\s]+", tail) if item.strip()]
+            filtered = [item for item in names if len(item) <= 8 and "会议" not in item and "会议室" not in item]
+            if filtered:
+                params["participants"] = filtered[:8]
+
+        if intent == "minutes_record" and len(user_input.strip()) > 20 and "meeting_url" not in params:
+            params.setdefault("transcript", user_input.strip())
+
+        if intent in {"meeting_query", "meeting_cancel", "meeting_update"} and "title" not in params:
+            plain_title = re.sub(r"(帮我|请|把|给我|一下|会议|修改|取消|查询|查看|安排|创建)", "", user_input).strip()
+            if 2 <= len(plain_title) <= 30:
+                params["title"] = plain_title
+
+        if intent == "group":
+            if "群" in user_input:
+                params["group_name"] = re.sub(r"(建群|创建|群聊|拉个群|把|帮我)", "", user_input).strip()[:20]
+            if params.get("participants"):
+                params["members"] = params.pop("participants")
+
+        if intent == "todo":
+            params["title"] = params.get("title") or user_input.strip()[:40]
+            if "我" in user_input:
+                params["owner"] = "我"
+
+        return {k: v for k, v in params.items() if v not in [None, "", []]}
 
 
-# 全局意图服务实例
 intent_service = IntentService()
-

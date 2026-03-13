@@ -41,6 +41,7 @@ websockets
 # ---------- 文档处理 ----------
 PyMuPDF
 pypinyin
+openpyxl
 
 # ---------- 浏览器自动化（爬虫）----------
 playwright

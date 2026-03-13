@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+import builtins
 from zhipuai import ZhipuAI
 import os
 import json
@@ -21,17 +22,20 @@ from ..services.llm_factory import LLMFactory
 from ..services.search_service import SearchService
 from ..services.dialogue_processor import dialogue_processor
 
+
+def print(*args, **kwargs):
+    try:
+        builtins.print(*args, **kwargs)
+    except UnicodeEncodeError:
+        safe_args = [str(arg).encode("gbk", "ignore").decode("gbk", "ignore") for arg in args]
+        builtins.print(*safe_args, **kwargs)
+
 # --- LlamaIndex Integration ---
 try:
     from llamaindex.rag_manager import KnowledgeBaseManager
 except ImportError:
-    # Add root to sys.path if not found
-    import sys
-    from pathlib import Path
-    root_path = str(Path(__file__).resolve().parent.parent.parent)
-    if root_path not in sys.path:
-        sys.path.append(root_path)
-    from llamaindex.rag_manager import KnowledgeBaseManager
+    # 本地知识库模块缺失时允许服务降级启动，避免会议域也被连带阻塞
+    KnowledgeBaseManager = None
 
 # Initialize KnowledgeBaseManager
 # Load API Key from environment (similar to ai_service)
@@ -41,7 +45,7 @@ load_dotenv(dotenv_path=env_path)
 ZHIPU_API_KEY = os.getenv("ZHIPUAI_API_KEY") or os.getenv("LOCAL_ZHIPU_APIKEY")
 
 rag_manager = None
-if ZHIPU_API_KEY:
+if ZHIPU_API_KEY and KnowledgeBaseManager:
     try:
         # Base dir is project_root/llamaindex
         project_root = Path(__file__).resolve().parent.parent.parent
@@ -432,14 +436,15 @@ async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session
                 print(f"❌ Web Search Failed: {e}")
 
         # 4b. Knowledge Base RAG (if enabled)
-        if request.use_rag:
+        rag_enabled = request.use_rag and rag_manager is not None
+        if rag_enabled:
             if last_user_message:
                 # 根据用户部门层级获取允许访问的知识库分类
                 allowed_categories = get_user_allowed_kb_categories(db, user_id)
                 print(f"🔍 Fetching RAG context for: {last_user_message} (allowed: {allowed_categories})")
                 rag_context = await fetch_rag_context(last_user_message, allowed_categories=allowed_categories)
         # 硬拦截：用户开启了RAG但未检索到相关内容 → 直接返回提示，不调用LLM防止幻觉
-        if request.use_rag and not rag_context:
+        if rag_enabled and not rag_context:
             no_result_msg = "抱歉，在您所属集团的知识库中未找到与该问题相关的信息。您可以尝试换一种方式描述问题，或关闭「知识库」开关进行普通对话。"
             print(f"⚠️ RAG开启但无结果，硬拦截返回提示")
             async def generate_no_rag():

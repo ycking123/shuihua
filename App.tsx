@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import MobileNav from './components/MobileNav';
 import Dashboard from './components/Dashboard';
 import ChatView from './components/ChatView';
+import MeetingView from './components/MeetingView';
 import TodoView from './components/TodoView';
 import PersonalView from './components/PersonalView';
 import ArchitectureCanvas from './components/ArchitectureCanvas';
@@ -95,6 +96,10 @@ const App: React.FC = () => {
             onClearContext={() => setChatContext(null)}
             isActive={activeView === ViewType.CHAT && isPageVisible}
           />
+        </div>
+
+        <div className={`absolute inset-0 transition-opacity duration-300 ${activeView === ViewType.MEETING ? 'opacity-100 z-10' : 'opacity-0 -z-10 pointer-events-none'}`}>
+          <MeetingView onNavigate={handleNavigate} isActive={activeView === ViewType.MEETING && isPageVisible} />
         </div>
 
         <div className={`absolute inset-0 transition-opacity duration-300 ${activeView === ViewType.TODO ? 'opacity-100 z-10' : 'opacity-0 -z-10 pointer-events-none'}`}>

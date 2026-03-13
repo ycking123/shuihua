@@ -161,41 +161,17 @@ def create_todo_internal(
     assignee: Optional[str] = None,
     user_id: Optional[str] = None
 ):
-    from ..models import User
-    
+    from ..models import SysUser
+
     final_user_id = None
-    
-    # 1. Try to use provided user_id if it exists in DB
-    if user_id:
-        # Check if it's a valid UUID first to avoid DB errors
-        try:
-            uuid.UUID(user_id)
-            user = db.query(User).filter(User.id == user_id).first()
-            if user:
-                final_user_id = user.id
-        except ValueError:
-             print(f"⚠️ create_todo_internal: Invalid UUID provided: {user_id}")
-            
-    # 2. If provided user_id was invalid or not provided, try default placeholder
-    if not final_user_id:
-        default_id = "00000000-0000-0000-0000-000000000000"
-        # Only use default if it actually exists in DB
-        user = db.query(User).filter(User.id == default_id).first()
+
+    if user_id and str(user_id).isdigit():
+        user = db.query(SysUser).filter(SysUser.user_id == int(user_id)).first()
         if user:
-            final_user_id = user.id
-            
-    # 3. Fallback: use ANY valid user (e.g. for deployed envs without default user)
-    # DEPRECATED: This caused isolation issues where tasks were assigned to random users (e.g. admin)
-    # We now strictly require a valid user_id or a valid default user.
-    # if not final_user_id:
-    #     user = db.query(User).filter(User.is_deleted == False).first()
-    #     if user:
-    #         final_user_id = user.id
-    #         print(f"⚠️ create_todo_internal: Using fallback user {user.username} ({user.id})")
-            
-    # 4. If absolutely no users found, raise error
+            final_user_id = str(user.user_id)
+
     if not final_user_id:
-        print(f"❌ create_todo_internal: Failed to find valid user. Provided: {user_id}")
+        print(f"❌ create_todo_internal: Failed to find valid sys_user. Provided: {user_id}")
         raise Exception("无法创建任务：未找到有效的用户关联。请尝试重新登录。")
 
     
