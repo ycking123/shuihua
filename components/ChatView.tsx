@@ -22,6 +22,7 @@ interface Message {
   id: string | number;
   type: 'agent' | 'user';
   content: string;
+  suggestions?: string[];
 }
 
 interface Model {
@@ -84,7 +85,7 @@ const AgentMessageContent = React.memo(({ content }: { content: string }) => {
   );
 });
 
-const MessageItem = React.memo(({ msg }: { msg: Message }) => {
+const MessageItem = React.memo(({ msg, onSuggestionClick }: { msg: Message, onSuggestionClick?: (text: string) => void }) => {
   return (
     <div className={`flex flex-col mb-8 ${msg.type === 'user' ? 'items-end' : 'items-start'} animate-in slide-in-from-bottom-2 duration-500`}>
       {msg.type === 'user' && (
@@ -101,6 +102,20 @@ const MessageItem = React.memo(({ msg }: { msg: Message }) => {
             </div>
             <div className="flex-1 p-4 glass-card rounded-[1.4rem] rounded-tl-none text-[14px] leading-relaxed text-slate-800 dark:text-slate-200 relative group font-light shadow-sm">
               <AgentMessageContent content={msg.content || ''} />
+              {msg.suggestions && msg.suggestions.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+                  {msg.suggestions.map((sug, i) => (
+                    <button 
+                      key={i} 
+                      onClick={() => onSuggestionClick && onSuggestionClick(sug)}
+                      className="text-xs px-3 py-1.5 rounded-full bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-700/50 hover:bg-blue-100 dark:hover:bg-blue-800/60 transition-colors text-left flex items-center gap-1.5"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" className="w-3 h-3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                      {sug}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -440,7 +455,13 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
 
               try {
                 const data = JSON.parse(dataStr);
-                if (data.content) {
+                if (data.suggestions) {
+                  setMessages(prev => {
+                    const newMsgs = [...prev];
+                    newMsgs[newMsgs.length - 1].suggestions = data.suggestions;
+                    return newMsgs;
+                  });
+                } else if (data.content) {
                   accumulatedContent += data.content;
                   const now = performance.now();
                   if (now - lastFlushTs >= STREAM_FLUSH_INTERVAL) {
@@ -540,7 +561,7 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
       {/* 对话列表 */}  
       <div className={`flex-1 overflow-y-auto px-4 pt-6 no-scrollbar transition-[padding] duration-500 ${isComposerCollapsed ? 'pb-28' : 'pb-72'}`}>
         {messages.map((msg) => (
-          <MessageItem key={msg.id} msg={msg} />
+          <MessageItem key={msg.id} msg={msg} onSuggestionClick={(sug) => { setInputValue(sug); setTimeout(() => handleSend(sug), 100); }} />
         ))}
         <div ref={messagesEndRef} />
       </div>

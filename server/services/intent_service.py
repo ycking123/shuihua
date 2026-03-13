@@ -29,6 +29,9 @@ class IntentService:
         self.model_name = "MiniMaxAI/MiniMax-M2.5"
 
     def detect_intent(self, user_input: str, context_messages: List[Dict] = None) -> Dict[str, Any]:
+        return self._heuristic_detect_intent(user_input)
+    
+    def detect_intent_legacy(self, user_input: str, context_messages: List[Dict] = None) -> Dict[str, Any]:
         heuristic = self._heuristic_detect_intent(user_input)
         if heuristic["intent"] != "chat":
             return heuristic
@@ -204,14 +207,6 @@ class IntentService:
         text = user_input.strip()
 
         rules = [
-            ("minutes_import", [r"https?://", r"导入.*会议链接", r"纪要链接"]),
-            ("minutes_record", [r"录音", r"转写", r"纪要"]),
-            ("meeting_cancel", [r"取消.*会议", r"取消.*会", r"删掉.*会议"]),
-            ("meeting_update", [r"修改.*会议", r"调整.*会议", r"改到.*会议", r"延期.*会议"]),
-            ("room_book", [r"预约.*会议室", r"预定.*会议室", r"订.*会议室", r"定个.*会议室"]),
-            ("room_query", [r"会议室", r"空闲.*会议室", r"有哪些会议室", r"会议室占用"]),
-            ("meeting_query", [r"我的会议", r"有哪些会议", r"查.*会议", r"会议列表"]),
-            ("meeting_create", [r"创建.*会议", r"安排.*会议", r"开个会", r"约个会", r"组织.*会议"]),
             ("group", [r"建群", r"群聊", r"拉个群"]),
             ("todo", [r"待办", r"任务", r"提醒我", r"帮我记一下"]),
         ]

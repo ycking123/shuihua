@@ -1,3 +1,4 @@
+import time
 from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -218,6 +219,7 @@ def get_chat_history(http_request: Request, db: Session = Depends(get_db)):
 
 @router.post("/api/chat")
 async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session = Depends(get_db)):
+    t0_start = time.time()
     # Extract user_id from token if available
     user_id = "0"
     auth_header = http_request.headers.get("Authorization")
@@ -245,6 +247,8 @@ async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session
     context_msgs = [{"role": m.role, "content": m.content} for m in request.messages[:-1]]
     
     try:
+        t1_dialog_start = time.time()
+        print(f"⏱️ [1. Auth & Session Init] Cost: {t1_dialog_start - t0_start:.3f}s", flush=True)
         dialogue_result = await dialogue_processor.process_message(
             user_input=last_user_message,
             user_id=user_id,
@@ -439,6 +443,8 @@ async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session
         rag_enabled = request.use_rag and rag_manager is not None
         if rag_enabled:
             if last_user_message:
+                t2_rag_start = time.time()
+                print(f"⏱️ [2. Dialogue & Pre-flight] Cost: {t2_rag_start - t1_dialog_start:.3f}s", flush=True)
                 # 根据用户部门层级获取允许访问的知识库分类
                 allowed_categories = get_user_allowed_kb_categories(db, user_id)
                 print(f"🔍 Fetching RAG context for: {last_user_message} (allowed: {allowed_categories})")
@@ -452,6 +458,20 @@ async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session
                 for char in no_result_msg:
                     yield f"data: {json.dumps({'content': char})}\n\n"
                     await asyncio.sleep(0.005)
+                
+                try:
+                    sug_prompt = f"用户提问：{last_user_message}\n系统未在企业知识库找到答案。请生成3个推荐的引导性追问（例如：询问其他方面、调整问题表述等），一行一个。"
+                    sug_model = "glm-4-flash" if "glm" in request.model.lower() else request.model
+                    def _get_sug():
+                        s_gen = provider.chat_stream(model=sug_model, messages=[{"role": "user", "content": sug_prompt}], system_instruction="只直接输出3个问题文本，一行一个")
+                        return "".join(s_gen)
+                    sug_text = await asyncio.to_thread(_get_sug)
+                    suggestions = [s.strip('- *0123456789.') for s in sug_text.split('\n') if s.strip()][:3]
+                    if suggestions:
+                        yield f"data: {json.dumps({'suggestions': suggestions})}\n\n"
+                except Exception:
+                    pass
+                    
                 yield "data: [DONE]\n\n"
             return StreamingResponse(generate_no_rag(), media_type="text/event-stream")
         # Combine Contexts
@@ -505,6 +525,9 @@ async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session
             system_instruction=system_instruction
         )
 
+        t4_llm_start = time.time()
+        print(f"⏱️ [4. Prompt Prep & Context] Cost: {t4_llm_start - locals().get('t3_rag_end', t4_llm_start):.3f}s", flush=True)
+        
         async def generate():
             full_response = ""
             # 将同步 generator 放入线程中执行，避免阻塞事件循环
@@ -536,12 +559,40 @@ async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session
                 if isinstance(item, Exception):
                     raise item
                 
+                if full_response == "":
+                    t5_first_token = time.time()
+                    print(f"⏱️ [5. First Token Delay (TTFT)] Cost: {t5_first_token - t4_llm_start:.3f}s", flush=True)
+                    print(f"⏱️ [TOTAL. User Ask -> First Token] Cost: {t5_first_token - t0_start:.3f}s", flush=True)
+                    
                 full_response += item
                 yield f"data: {json.dumps({'content': item})}\n\n"
             
             # Save Assistant Response to DB
             if full_response:
                 save_message(session_id, "assistant", full_response)
+                
+            # --- Generate Suggestions ---
+            try:
+                sug_prompt = f"基于用户的原问题和你的回答，提供3个推荐的追问（每行1个，不要序号，简短）。\n问题:{last_user_message}\n回答:{full_response[:300]}"
+                sug_model = "glm-4-flash" if "glm" in request.model.lower() else request.model
+                # Run generator inside thread
+                def _get_sug():
+                    try:
+                        s_gen = provider.chat_stream(
+                            model=sug_model,
+                            messages=[{"role": "user", "content": sug_prompt}],
+                            system_instruction="你负责猜用户会问什么，只直接输出3个问题文本，不要序号与标点前缀，一行一个"
+                        )
+                        return "".join(s_gen)
+                    except Exception as ie:
+                        return f"追问1\n追问2\n追问3"
+                
+                sug_text = await asyncio.to_thread(_get_sug)
+                suggestions = [s.strip('- *0123456789.') for s in sug_text.split('\n') if s.strip()][:3]
+                if suggestions:
+                    yield f"data: {json.dumps({'suggestions': suggestions})}\n\n"
+            except Exception as e:
+                print("Failed catching suggestions:", e)
                 
             yield "data: [DONE]\n\n"
 
