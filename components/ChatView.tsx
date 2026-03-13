@@ -18,11 +18,16 @@ const getApiUrl = (path: string): string => {
   return path;
 };
 
+interface Citation {
+  file: string;
+  score: number;
+}
 interface Message {
   id: string | number;
   type: 'agent' | 'user';
   content: string;
   suggestions?: string[];
+  citations?: Citation[];
 }
 
 interface Model {
@@ -31,7 +36,7 @@ interface Model {
   provider: string;
 }
 
-const AgentMessageContent = React.memo(({ content }: { content: string }) => {
+const AgentMessageContent = React.memo(({ content, citations }: { content: string, citations?: Citation[] }) => {
   const thinkStart = content.indexOf('<think>');
   let thinkContent: string | null = null;
   let mainContent = content;
@@ -46,17 +51,57 @@ const AgentMessageContent = React.memo(({ content }: { content: string }) => {
       mainContent = '';
     }
   }
+  
+  if (mainContent) {
+    mainContent = mainContent.replace(/<br\s*\/?>/gi, '\n');
+  }
 
   return (
     <>
       {thinkContent && <ThinkingProcess content={thinkContent} />}
+      {!mainContent && !thinkContent && (
+        <div className="flex items-center gap-2 py-1">
+          <div className="flex space-x-1">
+            <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce"></div>
+            <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.15s' }}></div>
+            <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.3s' }}></div>
+          </div>
+          <span className="text-xs text-slate-500 font-medium">翻阅知识卡片与组织逻辑中...</span>
+        </div>
+      )}
+      {citations && citations.length > 0 && (
+        <div className="mb-4 p-3 bg-blue-50/50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-900">
+          <div className="flex items-center gap-1.5 mb-2 text-xs font-semibold text-blue-700 dark:text-blue-400">
+            <Database size={12} className="text-blue-500" />
+            参考知识卡片
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {citations.map((cite, idx) => (
+              <div key={idx} className="flex flex-col gap-0.5 px-2 py-1.5 bg-white dark:bg-slate-800 rounded-md shadow-sm border border-slate-200 dark:border-slate-700/50 hover:border-blue-300 transition-colors cursor-help group" title="点击查看详情（功能开发中）">
+                <div className="flex items-center justify-between min-w-[120px]">
+                  <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate max-w-[150px]">
+                    {cite.file}
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-mono scale-90">{(cite.score * 100).toFixed(0)}%</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {mainContent ? (
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{
             p: ({node, ...props}) => <p className="mb-2 last:mb-0" {...props} />,
+            strong: ({node, ...props}) => <strong className="font-semibold text-slate-900 dark:text-white" {...props} />,
+            em: ({node, ...props}) => <em className="italic" {...props} />,
+            h1: ({node, ...props}) => <h1 className="text-xl font-bold mt-4 mb-2 text-slate-900 dark:text-white" {...props} />,
+            h2: ({node, ...props}) => <h2 className="text-lg font-bold mt-3 mb-2 text-slate-900 dark:text-white" {...props} />,
+            h3: ({node, ...props}) => <h3 className="text-md font-bold mt-2 mb-1 text-slate-900 dark:text-white" {...props} />,
             ul: ({node, ...props}) => <ul className="list-disc list-inside mb-2" {...props} />,
             ol: ({node, ...props}) => <ol className="list-decimal list-inside mb-2" {...props} />,
+            br: () => <br />,
             li: ({node, ...props}) => <li className="mb-1" {...props} />,
             a: ({node, ...props}) => <a className="text-blue-500 hover:underline" {...props} />,
             blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-slate-300 pl-4 italic my-2" {...props} />,
@@ -459,6 +504,12 @@ const ChatView: React.FC<{ initialContext?: string | null; onClearContext?: () =
                   setMessages(prev => {
                     const newMsgs = [...prev];
                     newMsgs[newMsgs.length - 1].suggestions = data.suggestions;
+                    return newMsgs;
+                  });
+                } else if (data.citations) {
+                  setMessages(prev => {
+                    const newMsgs = [...prev];
+                    newMsgs[newMsgs.length - 1].citations = data.citations;
                     return newMsgs;
                   });
                 } else if (data.content) {

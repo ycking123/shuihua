@@ -29,9 +29,6 @@ class IntentService:
         self.model_name = "MiniMaxAI/MiniMax-M2.5"
 
     def detect_intent(self, user_input: str, context_messages: List[Dict] = None) -> Dict[str, Any]:
-        return self._heuristic_detect_intent(user_input)
-    
-    def detect_intent_legacy(self, user_input: str, context_messages: List[Dict] = None) -> Dict[str, Any]:
         heuristic = self._heuristic_detect_intent(user_input)
         if heuristic["intent"] != "chat":
             return heuristic

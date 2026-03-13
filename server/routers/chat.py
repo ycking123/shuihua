@@ -249,12 +249,17 @@ async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session
     try:
         t1_dialog_start = time.time()
         print(f"⏱️ [1. Auth & Session Init] Cost: {t1_dialog_start - t0_start:.3f}s", flush=True)
-        dialogue_result = await dialogue_processor.process_message(
-            user_input=last_user_message,
-            user_id=user_id,
-            context_messages=context_msgs,
-            db=db
-        )
+        
+        if request.use_rag:
+            print("🚀 RAG Enabled: Bypassing Intent LLM check!")
+            dialogue_result = {"type": "chat"}
+        else:
+            dialogue_result = await dialogue_processor.process_message(
+                user_input=last_user_message,
+                user_id=user_id,
+                context_messages=context_msgs,
+                db=db
+            )
         
         # 如果需要追问或确认，直接返回流式响应
         if dialogue_result["type"] in ["clarification", "confirmation"]:
@@ -441,6 +446,8 @@ async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session
 
         # 4b. Knowledge Base RAG (if enabled)
         rag_enabled = request.use_rag and rag_manager is not None
+        
+        citations = []
         if rag_enabled:
             if last_user_message:
                 t2_rag_start = time.time()
@@ -448,7 +455,21 @@ async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session
                 # 根据用户部门层级获取允许访问的知识库分类
                 allowed_categories = get_user_allowed_kb_categories(db, user_id)
                 print(f"🔍 Fetching RAG context for: {last_user_message} (allowed: {allowed_categories})")
-                rag_context = await fetch_rag_context(last_user_message, allowed_categories=allowed_categories)
+                rag_context_raw = await asyncio.to_thread(rag_manager.retrieve_all_documents, last_user_message, 3, allowed_categories)
+                if isinstance(rag_context_raw, list):
+                    all_citations = []
+                    for ctx_tuple in rag_context_raw:
+                        if isinstance(ctx_tuple, tuple):
+                            all_citations.extend(ctx_tuple[1])
+                    rag_context = "\n\n".join([c[0] for c in rag_context_raw if isinstance(c, tuple)])
+                    
+                    unique_citations = {}
+                    for c in all_citations:
+                        if c['file'] not in unique_citations or c['score'] > unique_citations[c['file']]['score']:
+                            unique_citations[c['file']] = c
+                    citations = sorted(unique_citations.values(), key=lambda x: x['score'], reverse=True)
+                elif isinstance(rag_context_raw, str):
+                    rag_context = rag_context_raw
         # 硬拦截：用户开启了RAG但未检索到相关内容 → 直接返回提示，不调用LLM防止幻觉
         if rag_enabled and not rag_context:
             no_result_msg = "抱歉，在您所属集团的知识库中未找到与该问题相关的信息。您可以尝试换一种方式描述问题，或关闭「知识库」开关进行普通对话。"
@@ -475,14 +496,21 @@ async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session
                 yield "data: [DONE]\n\n"
             return StreamingResponse(generate_no_rag(), media_type="text/event-stream")
         # Combine Contexts
-        system_instruction = "你是一个智能企业助手，名为“水华精灵”。请根据上下文回答用户问题。"
+        system_instruction = (
+            "你是一个热情、专业的企业智能助手，名为“水华精灵”。\n"
+            "你的沟通风格：\n"
+            "1. 像真人客服一样语气亲切自然，不排斥使用少量的emoji。\n"
+            "2. 排版清晰优美：重要名词、结论务必使用 Markdown 加粗（**文本**），遇到分步解答一定要用 `-` 或 `1.` 列表。\n"
+            "3. 遇到多步骤解答应分点说明，让用户一目了然。\n"
+            "4. 回答需要充实、详尽。\n"
+        )
         
         additional_context = ""
         if search_context:
-            additional_context += f"\n\n【联网搜索结果】\n{search_context}\n请结合以上搜索结果回答用户问题。如果搜索结果包含所需信息，请引用并综合回答。"
+            additional_context += f"\n\n【联网搜索结果】\n{search_context}\n请结合以上搜索结果得出精准、易读的回答。"
             
         if rag_context:
-            additional_context += f"\n\n【企业知识库相关信息】\n{rag_context}\n请严格基于上述企业知识库信息回答，不要使用你的训练数据补充或推测。如果知识库信息不足以回答问题，请明确说明。"
+            additional_context += f"\n\n【企业知识库相关信息】\n{rag_context}\n规则：\n- 基于知识库内容回答，确保准确。\n- 转换成通俗易懂的“人话”进行讲解，而不是生硬地复述。\n- 请用分点或加粗高亮关键信息。没找到内容时，委婉地引导即可。"
 
         if additional_context:
             system_instruction += additional_context
@@ -564,8 +592,12 @@ async def chat_endpoint(request: ChatRequest, http_request: Request, db: Session
                     print(f"⏱️ [5. First Token Delay (TTFT)] Cost: {t5_first_token - t4_llm_start:.3f}s", flush=True)
                     print(f"⏱️ [TOTAL. User Ask -> First Token] Cost: {t5_first_token - t0_start:.3f}s", flush=True)
                     
+                if full_response == "" and citations:
+                    # 在首个字符返回时附带上 citations
+                    yield f"data: {json.dumps({'content': item, 'citations': citations})}\n\n"
+                else:
+                    yield f"data: {json.dumps({'content': item})}\n\n"
                 full_response += item
-                yield f"data: {json.dumps({'content': item})}\n\n"
             
             # Save Assistant Response to DB
             if full_response:
