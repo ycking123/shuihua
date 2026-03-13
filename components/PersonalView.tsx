@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   User, Sparkles, Target, 
   Save, Brain, History,
@@ -43,6 +43,25 @@ const TONE_MODES = [
 ];
 
 const PersonalView: React.FC = () => {
+  const [profile, setProfile] = useState({ name: '吴志雄', role: '总裁', username: 'X-ESSENCE-001' });
+  useEffect(() => {
+    let ignore = false;
+    const fetchProfile = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        const baseUrl = import.meta.env.DEV ? '/api' : `http://${window.location.hostname}:8000/api`;
+        const res = await fetch(`${baseUrl}/auth/me`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const data = await res.json();
+        if (!ignore && data.nick_name) {
+          setProfile({ name: data.nick_name, role: data.position || '员工', username: data.username });
+        }
+      } catch (e) { console.error('Failed fetching profile', e); }
+    };
+    fetchProfile();
+    return () => { ignore = true; };
+  }, []);
+
   const [memo, setMemo] = useState("最近关注:AI是否能辅助经销商更快速地生成设计效果图、自动化获客或进行客户关系管理。");
   const [showToneSelector, setShowToneSelector] = useState(false);
   const [currentTone, setCurrentTone] = useState(TONE_MODES[0]);
@@ -111,11 +130,11 @@ const PersonalView: React.FC = () => {
             </div>
           </div>
           <div className="flex flex-col">
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">吴志雄</h2>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">{profile.name}</h2>
             <div className="flex items-center gap-2 mt-1">
-                <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold uppercase tracking-[0.2em]">总裁</span>
+                <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold uppercase tracking-[0.2em]">{profile.role}</span>
                 <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-700"></span>
-                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">X-ESSENCE-001</span>
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">{profile.username}</span>
             </div>
           </div>
         </div>

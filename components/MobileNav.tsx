@@ -8,12 +8,7 @@ interface MobileNavProps {
   hidden?: boolean;
 }
 
-<<<<<<< HEAD
-const MobileNav: React.FC<MobileNavProps> = ({ activeView, setActiveView, hidden = false }) => {
-  const pendingCount = TODOS_DATA.filter(t => t.status === 'pending').length;
-=======
 const getBaseUrl = () => (import.meta.env.DEV ? '/api' : `http://${window.location.hostname}:8000/api`);
-
 const getHeaders = (): Record<string, string> => {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   const token = localStorage.getItem('token');
@@ -21,7 +16,7 @@ const getHeaders = (): Record<string, string> => {
   return headers;
 };
 
-const MobileNav: React.FC<MobileNavProps> = ({ activeView, setActiveView }) => {
+const MobileNav: React.FC<MobileNavProps> = ({ activeView, setActiveView, hidden = false }) => {
   const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
@@ -46,7 +41,6 @@ const MobileNav: React.FC<MobileNavProps> = ({ activeView, setActiveView }) => {
       window.clearInterval(timer);
     };
   }, []);
->>>>>>> 02a2f06883c2d9708b12058bcf663d7f68e5b0f7
 
   const mobileTabs = [
     { id: ViewType.MEETING, icon: CalendarDays, label: '会议' },
