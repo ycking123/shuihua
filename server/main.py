@@ -37,7 +37,7 @@ load_dotenv(dotenv_path=BASE_DIR / ".env")
 # Import routers
 # Using relative imports as we are running as a module (python -m server.main)
 from .routers import asr, chat, todos, auth, dashboard, meetings
-from .database import engine, Base, init_db
+from .database import Base, engine, ensure_schema_updates, init_db
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -47,6 +47,8 @@ async def lifespan(app: FastAPI):
         init_db() # Ensure DB exists
         print("Initializing database tables...")
         Base.metadata.create_all(bind=engine)
+        print("Ensuring meeting domain schema updates...")
+        ensure_schema_updates()
         print("Database tables created successfully (if they didn't exist).")
     except Exception as e:
         print(f"Error creating database tables: {e}")

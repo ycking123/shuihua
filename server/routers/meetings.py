@@ -1,190 +1,314 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import desc
-from ..database import get_db
-from ..models import Meeting, Todo
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
-from datetime import datetime
-import re
+from sqlalchemy.orm import Session
 
-router = APIRouter(
-    prefix="/api/meetings",
-    tags=["meetings"],
-    responses={404: {"description": "Not found"}},
-)
+from ..database import get_db
+from ..security import verify_token
+from ..services.meeting_service import MeetingServiceError, meeting_service
 
-class MeetingResponse(BaseModel):
-    id: str
-    title: str
-    start_time: datetime
-    created_at: datetime
-    end_time: datetime
+
+router = APIRouter(tags=["meetings"])
+
+
+class MeetingCreateRequest(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    duration: Optional[str] = None
+    room_id: Optional[str] = None
+    room_name: Optional[str] = None
+    site_name: Optional[str] = None
     location: Optional[str] = None
-    summary: Optional[str] = None
+    participants: Optional[Any] = None
+    meeting_url: Optional[str] = None
     transcript: Optional[str] = None
-    organizer_id: Optional[str] = None
-    todos_count: int = 0
-    
-    class Config:
-        from_attributes = True
+    summary: Optional[str] = None
+    audio_file_key: Optional[str] = None
+    source_type: Optional[str] = None
+    channel: Optional[str] = None
+    status: Optional[str] = None
+    sync_status: Optional[str] = None
 
-class TodoResponse(BaseModel):
-    """会议关联的待办事项响应"""
-    id: str
-    title: str
-    content: Optional[str] = None
-    priority: str = "normal"
-    status: str = "pending"
-    assignee: Optional[str] = None
-    due_at: Optional[datetime] = None
-    created_at: Optional[datetime] = None
-    
-    class Config:
-        from_attributes = True
 
-class SmartTitleRequest(BaseModel):
-    """智能标题更新请求"""
-    pass  # 不需要参数，服务端自动判断
+class MeetingUpdateRequest(MeetingCreateRequest):
+    meeting_id: Optional[str] = None
 
-def _clean_title_prefix(title: str) -> str:
-    """
-    清理标题中的无效前缀和后缀
-    """
-    prefix_patterns = [
-        "这是一场关于",
-        "这是一场",
-        "本次会议是关于",
-        "本次会议",
-        "会议内容：",
-        "【AI 智能总览】",
-        "【章节内容详情】",
-        "【发言人观点整合】",
-    ]
-    
-    for prefix in prefix_patterns:
-        if title.startswith(prefix):
-            title = title[len(prefix):].strip()
-            break
-    
-    suffix_patterns = ["的讨论会", "的会议", "讨论会", "会议"]
-    for suffix in suffix_patterns:
-        if title.endswith(suffix) and len(title) > len(suffix) + 2:
-            title = title[:-len(suffix)]
-            break
-    
-    return title.strip()
 
-def generate_smart_title(title: str, summary: str) -> str:
-    """
-    智能标题生成逻辑
-    - 若为系统默认标题（如"xxx的快速会议"），提取 summary 第一句作为新标题
-    - 否则保留原标题
-    """
-    default_patterns = ["的快速会议", "的会议", "快速会议"]
-    
-    for pattern in default_patterns:
-        if pattern in title and len(title) < 30:
-            if summary:
-                sentences = re.split(r'[。！？\n]', summary)
-                for sentence in sentences:
-                    sentence = sentence.strip()
-                    if sentence and len(sentence) >= 5:
-                        sentence = _clean_title_prefix(sentence)
-                        if sentence and len(sentence) >= 5:
-                            return sentence[:50]
-            return title
-    
-    return title
+class MeetingLinkImportRequest(BaseModel):
+    meeting_id: Optional[str] = None
+    title: Optional[str] = None
+    meeting_url: Optional[str] = None
+    url: Optional[str] = None
+    description: Optional[str] = None
+    summary: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    location: Optional[str] = None
+    participants: Optional[Any] = None
+    channel: Optional[str] = None
 
-def db_meeting_to_response(meeting: Meeting, db: Session) -> MeetingResponse:
-    """转换数据库模型为响应模型，包含待办数量"""
-    todos_count = db.query(Todo).filter(
-        Todo.source_message_id == meeting.id,
-        Todo.is_deleted == False
-    ).count()
-    
-    return MeetingResponse(
-        id=meeting.id,
-        title=meeting.title,
-        start_time=meeting.start_time,
-        created_at=meeting.created_at,
-        end_time=meeting.end_time,
-        location=meeting.location,
-        summary=meeting.summary,
-        transcript=meeting.transcript,
-        organizer_id=meeting.organizer_id,
-        todos_count=todos_count
-    )
 
-@router.get("/", response_model=List[MeetingResponse])
+class MeetingTranscribeRequest(BaseModel):
+    meeting_id: Optional[str] = None
+    title: Optional[str] = None
+    transcript: Optional[str] = None
+    text: Optional[str] = None
+    summary: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    location: Optional[str] = None
+    participants: Optional[Any] = None
+    description: Optional[str] = None
+    audio_file_key: Optional[str] = None
+    channel: Optional[str] = None
+    sync_status: Optional[str] = None
+
+
+class MeetingRoomCreateRequest(BaseModel):
+    room_name: str
+    site_name: str
+    location_text: str
+    building_name: Optional[str] = None
+    floor_label: Optional[str] = None
+    capacity: Optional[int] = 0
+    seat_layout: Optional[str] = None
+    manager_name: Optional[str] = None
+    sort_order: Optional[int] = None
+    is_enabled: Optional[bool] = True
+    source_file: Optional[str] = None
+    source_sheet: Optional[str] = None
+
+
+class MeetingRoomUpdateRequest(MeetingRoomCreateRequest):
+    room_name: Optional[str] = None
+    site_name: Optional[str] = None
+    location_text: Optional[str] = None
+
+
+def get_current_user_id(http_request: Request) -> Optional[str]:
+    auth_header = http_request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return None
+
+    token = auth_header.split(" ", 1)[1]
+    payload = verify_token(token)
+    if payload and "user_id" in payload:
+        return str(payload["user_id"])
+    return None
+
+
+def raise_service_error(exc: MeetingServiceError) -> None:
+    detail: Dict[str, Any] = {"message": exc.message}
+    if exc.code:
+        detail["code"] = exc.code
+    if exc.extra:
+        detail["extra"] = exc.extra
+    raise HTTPException(status_code=exc.status_code, detail=detail)
+
+
+@router.get("/api/meetings")
 def get_meetings(
-    skip: int = 0, 
-    limit: int = 100, 
-    sort_by: str = Query("start_time", description="排序字段: start_time(会议时间) | created_at(发送时间)"),
-    db: Session = Depends(get_db)
+    skip: int = 0,
+    limit: int = 100,
+    sort_by: str = Query("start_time"),
+    status: Optional[str] = None,
+    keyword: Optional[str] = None,
+    db: Session = Depends(get_db),
 ):
-    if sort_by == "created_at":
-        query = db.query(Meeting).order_by(desc(Meeting.created_at))
-    else:
-        query = db.query(Meeting).order_by(desc(Meeting.start_time))
-    
-    meetings = query.offset(skip).limit(limit).all()
-    return [db_meeting_to_response(m, db) for m in meetings]
+    try:
+        return meeting_service.list_meetings(
+            db=db,
+            skip=skip,
+            limit=limit,
+            sort_by=sort_by,
+            status=status,
+            keyword=keyword,
+        )
+    except MeetingServiceError as exc:
+        raise_service_error(exc)
 
-@router.get("/{meeting_id}", response_model=MeetingResponse)
+
+@router.post("/api/meetings")
+def create_meeting(
+    payload: MeetingCreateRequest,
+    http_request: Request,
+    db: Session = Depends(get_db),
+):
+    try:
+        return meeting_service.create_meeting(
+            db=db,
+            payload=payload.model_dump(exclude_none=True),
+            current_user_id=get_current_user_id(http_request),
+        )
+    except MeetingServiceError as exc:
+        raise_service_error(exc)
+
+
+@router.patch("/api/meetings")
+def patch_meeting_by_body(
+    payload: MeetingUpdateRequest,
+    http_request: Request,
+    db: Session = Depends(get_db),
+):
+    meeting_id = payload.meeting_id
+    if not meeting_id:
+        raise HTTPException(status_code=400, detail={"message": "缺少 meeting_id"})
+    try:
+        return meeting_service.update_meeting(
+            db=db,
+            meeting_id=meeting_id,
+            payload=payload.model_dump(exclude_unset=True, exclude={"meeting_id"}),
+            current_user_id=get_current_user_id(http_request),
+        )
+    except MeetingServiceError as exc:
+        raise_service_error(exc)
+
+
+@router.post("/api/meetings/import-link")
+def import_meeting_link(
+    payload: MeetingLinkImportRequest,
+    http_request: Request,
+    db: Session = Depends(get_db),
+):
+    try:
+        return meeting_service.import_link(
+            db=db,
+            payload=payload.model_dump(exclude_none=True),
+            current_user_id=get_current_user_id(http_request),
+        )
+    except MeetingServiceError as exc:
+        raise_service_error(exc)
+
+
+@router.post("/api/meetings/transcribe")
+def transcribe_meeting(
+    payload: MeetingTranscribeRequest,
+    http_request: Request,
+    db: Session = Depends(get_db),
+):
+    try:
+        return meeting_service.transcribe_meeting(
+            db=db,
+            payload=payload.model_dump(exclude_none=True),
+            current_user_id=get_current_user_id(http_request),
+        )
+    except MeetingServiceError as exc:
+        raise_service_error(exc)
+
+
+@router.get("/api/meeting-rooms")
+def get_meeting_rooms(
+    keyword: Optional[str] = None,
+    site_name: Optional[str] = None,
+    building_name: Optional[str] = None,
+    floor_label: Optional[str] = None,
+    is_enabled: Optional[bool] = None,
+    min_capacity: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    try:
+        return meeting_service.list_rooms(
+            db=db,
+            keyword=keyword,
+            site_name=site_name,
+            building_name=building_name,
+            floor_label=floor_label,
+            is_enabled=is_enabled,
+            min_capacity=min_capacity,
+        )
+    except MeetingServiceError as exc:
+        raise_service_error(exc)
+
+
+@router.post("/api/meeting-rooms")
+def create_meeting_room(
+    payload: MeetingRoomCreateRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return meeting_service.create_room(db, payload.model_dump(exclude_none=True))
+    except MeetingServiceError as exc:
+        raise_service_error(exc)
+
+
+@router.get("/api/meeting-rooms/usage")
+def get_meeting_room_usage(
+    date: Optional[str] = None,
+    room_id: Optional[str] = None,
+    site_name: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    try:
+        return meeting_service.get_room_usage(
+            db=db,
+            usage_date=date,
+            room_id=room_id,
+            site_name=site_name,
+        )
+    except MeetingServiceError as exc:
+        raise_service_error(exc)
+
+
+@router.get("/api/meetings/{meeting_id}")
 def get_meeting(meeting_id: str, db: Session = Depends(get_db)):
-    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
-    if meeting is None:
-        raise HTTPException(status_code=404, detail="Meeting not found")
-    return db_meeting_to_response(meeting, db)
+    try:
+        return meeting_service.get_meeting(db, meeting_id)
+    except MeetingServiceError as exc:
+        raise_service_error(exc)
 
-@router.get("/{meeting_id}/todos", response_model=List[TodoResponse])
+
+@router.patch("/api/meetings/{meeting_id}")
+def patch_meeting(
+    meeting_id: str,
+    payload: MeetingUpdateRequest,
+    http_request: Request,
+    db: Session = Depends(get_db),
+):
+    try:
+        return meeting_service.update_meeting(
+            db=db,
+            meeting_id=meeting_id,
+            payload=payload.model_dump(exclude_unset=True, exclude={"meeting_id"}),
+            current_user_id=get_current_user_id(http_request),
+        )
+    except MeetingServiceError as exc:
+        raise_service_error(exc)
+
+
+@router.get("/api/meetings/{meeting_id}/todos")
 def get_meeting_todos(meeting_id: str, db: Session = Depends(get_db)):
-    """
-    获取会议关联的待办事项
-    通过 source_message_id 关联
-    """
-    # 先检查会议是否存在
-    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
-    if meeting is None:
-        raise HTTPException(status_code=404, detail="Meeting not found")
-    
-    # 查询关联的待办
-    todos = db.query(Todo).filter(
-        Todo.source_message_id == meeting_id,
-        Todo.is_deleted == False
-    ).order_by(Todo.created_at.desc()).all()
-    
-    return [TodoResponse(
-        id=t.id,
-        title=t.title,
-        content=t.content,
-        priority=t.priority,
-        status=t.status,
-        assignee=t.sender,
-        due_at=t.due_at,
-        created_at=t.created_at
-    ) for t in todos]
+    try:
+        return meeting_service.get_meeting_todos(db, meeting_id)
+    except MeetingServiceError as exc:
+        raise_service_error(exc)
 
-@router.post("/{meeting_id}/smart-title", response_model=MeetingResponse)
-def update_smart_title(meeting_id: str, db: Session = Depends(get_db)):
-    """
-    智能标题更新
-    - 判断标题是否为默认格式
-    - 若是，提取 summary 第一句作为新标题
-    """
-    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
-    if meeting is None:
-        raise HTTPException(status_code=404, detail="Meeting not found")
-    
-    # 生成智能标题
-    new_title = generate_smart_title(meeting.title, meeting.summary or "")
-    
-    if new_title != meeting.title:
-        meeting.title = new_title
-        meeting.updated_at = datetime.now()
-        db.commit()
-        db.refresh(meeting)
-    
-    return db_meeting_to_response(meeting, db)
+
+@router.post("/api/meetings/{meeting_id}/summary")
+def generate_meeting_summary(meeting_id: str, db: Session = Depends(get_db)):
+    try:
+        return meeting_service.generate_summary(db, meeting_id)
+    except MeetingServiceError as exc:
+        raise_service_error(exc)
+
+
+@router.patch("/api/meeting-rooms/{room_id}")
+def patch_meeting_room(
+    room_id: str,
+    payload: MeetingRoomUpdateRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return meeting_service.update_room(db, room_id, payload.model_dump(exclude_unset=True))
+    except MeetingServiceError as exc:
+        raise_service_error(exc)
+
+
+@router.delete("/api/meeting-rooms/{room_id}")
+def delete_meeting_room(room_id: str, db: Session = Depends(get_db)):
+    try:
+        return meeting_service.delete_room(db, room_id)
+    except MeetingServiceError as exc:
+        raise_service_error(exc)

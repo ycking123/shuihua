@@ -63,9 +63,12 @@ interface MeetingItem {
   title: string;
   start_time: string;
   created_at: string;
-  location: string;
-  summary: string;
-  transcript: string;
+  location?: string | null;
+  meeting_url?: string | null;
+  room_name?: string | null;
+  room_site_name?: string | null;
+  summary?: string | null;
+  transcript?: string | null;
   organizer_id?: string;
   todos_count?: number;
 }
@@ -333,6 +336,14 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate, isActive = true }) => {
     }
   };
 
+  const handleCategoryClick = (categoryId: string) => {
+    if (categoryId === 'meeting_minutes') {
+      onNavigate?.(ViewType.MEETING);
+      return;
+    }
+    setActiveCategory(categoryId as TodoCategory);
+  };
+
   const handleActionClick = () => {
     if (onNavigate && selectedItem) {
       const pText = selectedItem.priority === 'urgent' ? '紧急立即执行' : (selectedItem.priority === 'high' ? '重要战略关注' : '常规跟进');
@@ -366,7 +377,7 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate, isActive = true }) => {
             return (
               <button
                 key={cat.id}
-                onClick={() => setActiveCategory(cat.id as TodoCategory)}
+                onClick={() => handleCategoryClick(cat.id)}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl transition-all duration-300 border relative ${
                   isActive 
                   ? 'bg-blue-600 border-blue-400/50 text-white shadow-lg glow-blue' 
@@ -667,15 +678,15 @@ const TodoView: React.FC<TodoViewProps> = ({ onNavigate, isActive = true }) => {
                     <div className="h-px flex-1 bg-slate-200 dark:bg-white/5"></div>
                 </div>
                 <div className="bg-slate-50 dark:bg-white/5 p-4 rounded-xl">
-                  {selectedMeeting.location && selectedMeeting.location.startsWith('http') ? (
-                      <a href={selectedMeeting.location} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-blue-600 hover:underline">
+                  {(selectedMeeting.meeting_url || (selectedMeeting.location && selectedMeeting.location.startsWith('http') ? selectedMeeting.location : '')) ? (
+                      <a href={selectedMeeting.meeting_url || selectedMeeting.location} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-blue-600 hover:underline">
                           <LinkIcon size={14} />
-                          <span className="text-sm break-all">{selectedMeeting.location}</span>
+                          <span className="text-sm break-all">{selectedMeeting.meeting_url || selectedMeeting.location}</span>
                       </a>
                   ) : (
                       <div className="flex items-center gap-2 text-slate-500">
                           <Target size={14} />
-                          <span className="text-sm">{selectedMeeting.location || '无会议链接'}</span>
+                          <span className="text-sm">{selectedMeeting.location || selectedMeeting.room_name || '无会议链接'}</span>
                       </div>
                   )}
                 </div>
